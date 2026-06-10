@@ -51,7 +51,7 @@ The installer refuses to install into itself and never clobbers an existing conf
 3. **Walk `copilot-workflow-harness/PREFLIGHT.md`** — once per machine. It validates the Copilot
    side: agents visible in the picker, prompts resolve as slash commands, model names match your
    picker, terminal auto-approve actually auto-approves, subagent delegation available or the
-   multi-session fallback understood. On a locked-down work laptop this is the step that surfaces
+   multi-session fallback understood. This is the step that surfaces
    org-policy surprises **before** they cost you a build.
 
 Then **reload VS Code** so it picks up `.github/agents/`, `.github/prompts/`, and the settings.
@@ -77,11 +77,11 @@ node copilot-workflow-harness/scripts/run-gate.mjs --no-runtime
 
 ---
 
-## Getting it onto a locked-down work machine
+## Getting it onto a locked-down machine
 
 The kit is self-contained, zero-dependency Node — a folder copy is a full install of the kit repo:
 
-- **Git remote allowed:** push this repo to your internal Git host, clone it on the work machine.
+- **Git remote allowed:** push this repo to your internal Git host, clone it on the target machine.
 - **No remote:** zip the folder (`zip -r cwh.zip copilot-workflow-harness -x "*/node_modules/*"`),
   transfer by whatever channel is sanctioned, unzip, run `install.mjs`. Nothing phones home;
   `playwright-core` is the only (optional) npm dependency, needed only on projects using the web

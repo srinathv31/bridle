@@ -8,8 +8,8 @@ claim**. One repo, two editions over the **same trust core**:
 
 | Edition                                                  | Binds to                                                                                                                                                                    | Use it when                                                              |
 | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`agent-workflow-harness/`](agent-workflow-harness/)     | **Claude Code** — skills, agents, the deterministic `execute-phase` Workflow engine, PostToolUse hooks                                                                      | Claude Code is available (personal machines)                             |
-| [`copilot-workflow-harness/`](copilot-workflow-harness/) | **GitHub Copilot Chat in VS Code, IDE-only** — custom agents, prompt files, managed `copilot-instructions.md` block, auto-approve settings. No Copilot CLI, no cloud agents | locked-down machines where IDE Copilot is the only allowed agent surface |
+| [`agent-workflow-harness/`](agent-workflow-harness/)     | **Claude Code** — skills, agents, the deterministic `execute-phase` Workflow engine, PostToolUse hooks                                                                      | Claude Code is your coding agent                             |
+| [`copilot-workflow-harness/`](copilot-workflow-harness/) | **GitHub Copilot Chat in VS Code, IDE-only** — custom agents, prompt files, managed `copilot-instructions.md` block, auto-approve settings. No Copilot CLI, no cloud agents | GitHub Copilot Chat in VS Code is your coding agent |
 
 The trust core — plain zero-dependency Node scripts (`phase-items`, `precheck`, `run-gate`,
 `qa-check`, `phase-guard`, `subagent-status`, `hook-selftest`), the pluggable runtime verifiers,
@@ -39,7 +39,7 @@ Then follow the edition's own docs:
 - **Claude Code:** [`agent-workflow-harness/README.md`](agent-workflow-harness/README.md) ·
   [`INSTALL.md`](agent-workflow-harness/INSTALL.md). Drive with `/plan-work-item …` →
   `/drive-build auto` (or `/run-phase P1`).
-- **Copilot (work laptop):** [`copilot-workflow-harness/README.md`](copilot-workflow-harness/README.md) ·
+- **Copilot:** [`copilot-workflow-harness/README.md`](copilot-workflow-harness/README.md) ·
   [`INSTALL.md`](copilot-workflow-harness/INSTALL.md) · **walk
   [`PREFLIGHT.md`](copilot-workflow-harness/PREFLIGHT.md) once per machine** — it validates the
   Copilot side (agents/prompts visible, model + tool names match your build, auto-approve works)

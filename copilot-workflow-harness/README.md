@@ -6,7 +6,7 @@ It makes AI coding agents produce verifiable work instead of plausible-sounding 
 a **mechanical detector behind every claim** — and it stands up in any repo with **one command**.
 
 **Targets Copilot Chat in VS Code. Nothing else.** No Copilot CLI, no cloud coding agent, no
-GitHub Actions dependency — built for locked-down work machines where the IDE chat is the only
+GitHub Actions dependency — built for locked-down machines where the IDE chat is the only
 agent surface you're allowed. The trust layer underneath (plain Node scripts) is runtime-neutral
 and identical to the Claude Code edition; only the binding pack differs.
 
