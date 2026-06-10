@@ -1,4 +1,6 @@
-# workflow-harness
+# bridle
+
+_The gear that lets you steer a powerful animal._
 
 A portable trust layer for **multi-agent AI builds** — it makes a fleet of coding agents produce
 verifiable work instead of plausible-sounding work, by putting a **mechanical detector behind every
@@ -24,12 +26,12 @@ Clone this repo once, then run the edition's installer against any target projec
 idempotent — re-run to update):
 
 ```bash
-git clone <this-repo> ~/code/workflow-harness
+git clone https://github.com/srinathv31/bridle.git ~/code/bridle
 
 cd /path/to/your-project
-node ~/code/workflow-harness/agent-workflow-harness/install.mjs     # Claude Code edition
+node ~/code/bridle/agent-workflow-harness/install.mjs     # Claude Code edition
 # or
-node ~/code/workflow-harness/copilot-workflow-harness/install.mjs   # Copilot IDE edition
+node ~/code/bridle/copilot-workflow-harness/install.mjs   # Copilot IDE edition
 ```
 
 Then follow the edition's own docs:
@@ -51,7 +53,7 @@ Those `npx` one-liners assume the kit is the repo **root** — from this combine
 ## Layout
 
 ```
-workflow-harness/
+bridle/
   agent-workflow-harness/      # Claude Code edition  = trust core + claude/ binding pack
   copilot-workflow-harness/    # Copilot IDE edition  = trust core + github/ + vscode/ binding packs
 ```
