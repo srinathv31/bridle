@@ -1,0 +1,40 @@
+{
+  "name": "agent-workflow-harness",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "App-agnostic, Claude-Code-first multi-agent build/QA harness. One command installs the scripts, skills, agents, workflow, and hooks into any repo. Plain Node (exit code is the contract) + a config manifest + a pluggable runtime verifier.",
+  "bin": {
+    "agent-workflow-harness": "install.mjs"
+  },
+  "files": [
+    "install.mjs",
+    "lib",
+    "scripts",
+    "verifiers",
+    "hooks",
+    "templates",
+    "roles",
+    "claude",
+    "harness.config.example.json",
+    "harness.config.schema.json",
+    "README.md",
+    "INSTALL.md"
+  ],
+  "scripts": {
+    "install-into": "node install.mjs",
+    "phase-items": "node scripts/phase-items.mjs",
+    "precheck": "node scripts/precheck.mjs",
+    "run-gate": "node scripts/run-gate.mjs",
+    "qa-check": "node scripts/qa-check.mjs",
+    "phase-guard": "node scripts/phase-guard.mjs",
+    "subagent-status": "node scripts/subagent-status.mjs",
+    "hook-selftest": "node scripts/hook-selftest.mjs"
+  },
+  "optionalDependencies": {
+    "playwright-core": "^1.60.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,8 @@
+# Dependencies (only playwright-core, and only if installed for local verifier testing)
+node_modules/
+
+# Hook selftest scratch space
+.hook-selftest-tmp/
+
+# OS noise
+.DS_Store

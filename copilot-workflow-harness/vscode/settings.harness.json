@@ -1,0 +1,23 @@
+{
+  "$comment": "copilot-workflow-harness — VS Code settings the installer merges into <target>/.vscode/settings.json. If your settings.json has comments (JSONC), the installer can't parse it and leaves this file next to it for manual merge. Setting IDs current as of VS Code mid-2026; if one is unknown in your build, find its successor in the Settings editor (see PREFLIGHT.md).",
+
+  "chat.useAgentsMdFile": true,
+
+  "chat.agent.maxRequests": 150,
+
+  "chat.tools.terminal.autoApprove": {
+    "/^node copilot-workflow-harness\\/(scripts|verifiers)\\/[\\w./-]+\\.mjs\\b/": true,
+    "/^node -e 'console\\.log\\(Date\\.now\\(\\)\\)'$/": true,
+    "/^date \\+%s/": true,
+    "/^(pnpm|npm run|yarn) (lint|typecheck|test|build)\\b/": true,
+    "/^pnpm exec (tsc|eslint|prettier)\\b/": true,
+    "/^git (status|diff|log|show)\\b/": true,
+    "rm": false,
+    "/^git (push|reset|clean)\\b/": false
+  },
+
+  "chat.tools.edits.autoApprove": {
+    "docs/redesign/**": true,
+    "docs/redesign/.status/**": true
+  }
+}

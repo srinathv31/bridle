@@ -1,0 +1,7 @@
+# Harness runtime state — never commit
+node_modules/
+.hook-selftest-tmp/
+
+# Executor heartbeats live under your project's statusDir (default docs/redesign/.status/).
+# Add THIS line to your PROJECT root .gitignore (not just here), pointing at your statusDir:
+#   docs/redesign/.status/

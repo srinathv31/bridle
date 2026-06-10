@@ -1,0 +1,198 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/harness.config.schema.json",
+  "title": "Build/QA harness config",
+  "description": "The single per-project manifest. Every harness script reads it instead of hardcoding paths, id schemes, runner verbs, or file extensions. Relative paths resolve against the project root (the dir holding this file, unless `root` overrides it).",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "root": {
+      "type": "string",
+      "description": "Project root, relative to THIS manifest's location. Omit when the manifest sits at the repo root. The shipped example sits in harness/ and sets \"..\" so it runs in place."
+    },
+    "planDir": {
+      "type": "string",
+      "description": "Directory holding the plan files (work-phases.md, contracts.md, work-item-*.md, phase-*-qa.md). Default docs/redesign.",
+      "default": "docs/redesign"
+    },
+    "statusDir": {
+      "type": "string",
+      "description": "Directory where executors write heartbeat files <id>.json. Default docs/redesign/.status. Gitignore it.",
+      "default": "docs/redesign/.status"
+    },
+    "ids": {
+      "type": "object",
+      "description": "The work-item / phase id scheme, as regexes. Defaults match W<n>.<m> items grouped into P<n> phases.",
+      "properties": {
+        "checklistItem": {
+          "type": "string",
+          "description": "Regex with named groups (?<id>...) and (?<phase>...). Matches a checklist item id and the phase number it rolls up to.",
+          "default": "(?<id>W(?<phase>\\d+)\\.\\d+)"
+        },
+        "phaseLabel": {
+          "type": "string",
+          "description": "Template turning a phase number into a phase label. {phase} is substituted.",
+          "default": "P{phase}"
+        },
+        "phaseArg": {
+          "type": "string",
+          "description": "Regex a CLI arg must match to be treated as a phase id.",
+          "default": "^P\\d+$"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "description": "What counts as a citable source artifact in a QA report. THE porting trap: qa-check only recognizes citations whose path is under one of these dirs and ends in one of these extensions — add your language's extensions or non-matching citations silently escape the evidence checks (fail-open).",
+      "properties": {
+        "dirs": { "type": "array", "items": { "type": "string" } },
+        "extensions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "File extensions WITHOUT the dot. Include image types (png, jpg, …) for screenshots and every source language you cite."
+        }
+      }
+    },
+    "report": {
+      "type": "object",
+      "properties": {
+        "namePattern": {
+          "type": "string",
+          "description": "QA report filename per phase. {phase} substituted (e.g. phase-{phase}-qa.md).",
+          "default": "phase-{phase}-qa.md"
+        },
+        "discoverGlob": {
+          "type": "string",
+          "description": "Regex to find QA reports in planDir when qa-check is run with no argument.",
+          "default": "^phase-.*-qa.*\\.md$"
+        }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "description": "The ONLY place stack-specific build verbs live. Each is a shell command run from the project root. Leave a verb \"\" to skip it at the gate (e.g. a project with no typecheck).",
+      "properties": {
+        "lint": { "type": "string" },
+        "typecheck": { "type": "string" },
+        "test": { "type": "string" },
+        "build": { "type": "string" },
+        "dev": {
+          "type": "string",
+          "description": "How to start the app for the runtime verifier. The conductor/QA brings this up; run-gate does not manage its lifecycle."
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "properties": {
+        "blockOn": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["critical", "major", "minor"] },
+          "description": "Defect severities that block a merge barrier. Default [\"critical\",\"major\"] — a deliberate hardening so a major load-bearing defect can't pass an autonomous barrier on the conductor's mood alone.",
+          "default": ["critical", "major"]
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "description": "The pluggable 'is it actually alive when exercised' check.",
+      "properties": {
+        "verifier": {
+          "type": "string",
+          "description": "Built-in name (\"web\" = Playwright freeze-canary for browser UIs, \"none\" = no-op), or a path (relative to project root) to a custom adapter exporting verify(cfg). See verifiers/README.md.",
+          "default": "none"
+        },
+        "uiFilePattern": {
+          "type": "string",
+          "description": "Regex over a work-item's file paths. If any file matches, the item isUI=true and the phase gate runs the runtime verifier. For non-web stacks, point this at whatever files imply a runtime surface (handlers, endpoints) or leave it never-matching.",
+          "default": "^(?:src/)?app/.+\\.(?:tsx|jsx)$"
+        },
+        "web": {
+          "type": "object",
+          "description": "Config for the built-in web verifier.",
+          "properties": {
+            "baseUrl": { "type": "string", "default": "http://localhost:3000" },
+            "browserChannel": { "type": "string", "default": "chrome" },
+            "routes": {
+              "type": "array",
+              "description": "Each route the gate loads and drives. The gate only catches a freeze on an interaction it actually drives.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": { "type": "string" },
+                  "interactions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "label": { "type": "string" },
+                        "role": {
+                          "type": "string",
+                          "description": "ARIA role for getByRole"
+                        },
+                        "name": {
+                          "type": "string",
+                          "description": "Accessible name for getByRole"
+                        }
+                      },
+                      "required": ["label", "role", "name"]
+                    }
+                  }
+                },
+                "required": ["path"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Editor-time lint/format hooks. Each runs the configured command with {file} substituted.",
+      "properties": {
+        "lint": { "$ref": "#/$defs/hook" },
+        "format": { "$ref": "#/$defs/hook" }
+      }
+    }
+  },
+  "$defs": {
+    "hook": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Shell command; {file} is replaced with the edited file path."
+        },
+        "parser": {
+          "type": "string",
+          "enum": ["eslint-json"],
+          "description": "Optional richer parser. eslint-json splits errors (block) from warnings (surface). Omit for the generic non-zero-exit contract."
+        },
+        "blockOn": {
+          "type": "string",
+          "enum": ["error", "nonzero"],
+          "description": "Lint only: when to BLOCK the agent (exit 2)."
+        },
+        "extensions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Only these file types are processed (without the dot)."
+        },
+        "ignore": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Path substrings to skip."
+        },
+        "selftest": {
+          "type": "object",
+          "description": "A KNOWN-BAD fixture hook-selftest writes to prove the hook has teeth. The one irreducibly per-stack value: content the linter/formatter is guaranteed to react to.",
+          "properties": {
+            "filename": { "type": "string" },
+            "content": { "type": "string" }
+          },
+          "required": ["filename", "content"]
+        }
+      }
+    }
+  }
+}
