@@ -1,0 +1,22 @@
+# codex-workflow-harness — project-scoped Codex config the installer writes to <target>/.codex/config.toml
+# (or leaves as .codex/config.harness.toml for manual merge if you already have one).
+#
+# Codex only loads project-scoped config for TRUSTED projects — mark this repo trusted once
+# (Codex prompts on first run, or set `projects."<abs path>".trust_level = "trusted"` in
+# ~/.codex/config.toml). See PREFLIGHT.md.
+#
+# Machine-level settings (model provider, auth, notifications) CANNOT live here by design —
+# keep those in ~/.codex/config.toml. Model choice per harness ROLE lives in
+# harness.config.json → codex.models (read by codex/drive-phase.mjs), not here.
+
+# Executors and QA edit repo files; the interactive session should too.
+sandbox_mode = "workspace-write"
+
+# codex exec (the conductor's children) never prompts; this governs your interactive sessions.
+# "on-request" keeps a human in the loop for escalations while the trust scripts run freely.
+approval_policy = "on-request"
+
+[sandbox_workspace_write]
+# The runtime verifier and dev server run OUTSIDE the Codex sandbox (the conductor owns them),
+# so executors do not need network. Flip to true only if your build steps genuinely fetch.
+network_access = false
