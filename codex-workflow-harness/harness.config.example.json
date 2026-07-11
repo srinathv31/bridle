@@ -1,0 +1,132 @@
+{
+  "$schema": "./harness.config.schema.json",
+
+  "planDir": "docs/redesign",
+  "statusDir": "docs/redesign/.status",
+
+  "ids": {
+    "checklistItem": "(?<id>W(?<phase>\\d+)\\.\\d+)",
+    "phaseLabel": "P{phase}",
+    "phaseArg": "^P\\d+$"
+  },
+
+  "source": {
+    "dirs": [
+      "src",
+      "app",
+      "lib",
+      "components",
+      "scripts",
+      "tests",
+      "test",
+      "public",
+      "docs",
+      ".claude",
+      ".github"
+    ],
+    "extensions": [
+      "png",
+      "jpg",
+      "jpeg",
+      "webp",
+      "gif",
+      "svg",
+      "ts",
+      "tsx",
+      "js",
+      "jsx",
+      "mjs",
+      "cjs",
+      "md",
+      "json",
+      "css",
+      "sql",
+      "py",
+      "go",
+      "rb",
+      "rs",
+      "java",
+      "kt",
+      "swift",
+      "php",
+      "cs",
+      "yml",
+      "yaml",
+      "toml"
+    ]
+  },
+
+  "report": {
+    "namePattern": "phase-{phase}-qa.md",
+    "discoverGlob": "^phase-.*-qa.*\\.md$"
+  },
+
+  "runner": {
+    "lint": "pnpm lint",
+    "typecheck": "pnpm typecheck",
+    "test": "pnpm test",
+    "build": "pnpm build",
+    "dev": "pnpm dev"
+  },
+
+  "gate": {
+    "blockOn": ["critical", "major"]
+  },
+
+  "runtime": {
+    "verifier": "web",
+    "uiFilePattern": "^(?:src/)?app/.+\\.(?:tsx|jsx)$",
+    "web": {
+      "baseUrl": "http://localhost:3000",
+      "browserChannel": "chrome",
+      "routes": [
+        { "path": "/", "interactions": [] },
+        { "path": "/rooms", "interactions": [] },
+        { "path": "/pets", "interactions": [] },
+        {
+          "path": "/bookings",
+          "interactions": [
+            {
+              "label": "open status filter",
+              "role": "combobox",
+              "name": "Filter by status"
+            }
+          ]
+        },
+        {
+          "path": "/invoices",
+          "interactions": [
+            {
+              "label": "open status filter",
+              "role": "combobox",
+              "name": "Filter by status"
+            }
+          ]
+        }
+      ]
+    }
+  },
+
+  "hooks": {
+    "lint": {
+      "command": "pnpm exec eslint --no-warn-ignored --format json {file}",
+      "parser": "eslint-json",
+      "blockOn": "error",
+      "extensions": ["ts", "tsx"],
+      "ignore": ["node_modules", "dist", ".next"],
+      "selftest": {
+        "filename": "selftest-fixture.ts",
+        "content": "const unusedSelftestVar: any = 123;\nexport const ok = 1;\n"
+      }
+    },
+    "format": {
+      "command": "pnpm exec prettier --write {file}",
+      "extensions": ["ts", "tsx", "js", "jsx", "json", "css", "md"],
+      "ignore": ["node_modules", "dist", ".next", "supabase/migrations"],
+      "selftest": {
+        "filename": "selftest-fixture.ts",
+        "content": "export  const    x=1;export const   y    =   2;\n"
+      }
+    }
+  }
+}
