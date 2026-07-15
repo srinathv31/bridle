@@ -1,7 +1,7 @@
 export const meta = {
   name: "execute-phase",
   description:
-    "Build one phase end-to-end: read the phase plan deterministically (phase-items.mjs), dispatch work-item executors (parallel only when file sets are genuinely disjoint), run the whole-repo detector gate ONCE (run-gate.mjs: configured lint/typecheck/test + the runtime verifier) against a single dev server, QA in a SEPARATE agent (+ qa-check), then verify phase-guard. Returns a structured verdict and never advances to the next phase — the merge barrier is the caller's decision. App-agnostic: all stack verbs/paths come from harness.config.json.",
+    "Build one phase end-to-end: read the phase plan deterministically (phase-items.mjs), dispatch work-item executors (parallel only when file sets are genuinely disjoint), run the whole-repo detector gate ONCE (run-gate.mjs: configured lint/typecheck/test + the runtime verifier) against a single dev server, QA in a SEPARATE agent (+ qa-check), then verify phase-guard. Returns a structured verdict and never advances to the next phase — the merge barrier is the caller's decision. Args: 'P2' or { phase, attempt, answers } — a blocked build surfaces the executors' questions in the verdict, and the conductor's answers re-enter the still-open items' prompts on the next attempt. App-agnostic: all stack verbs/paths come from harness.config.json.",
   phases: [
     {
       title: "Read plan",
@@ -36,15 +36,36 @@ const HARNESS = "agent-workflow-harness"; // vendored kit path in the target rep
 // this is the deliberate hardening over the original (which blocked on critical only).
 const BLOCK_SEVERITIES = ["critical", "major"];
 
-// ─── target phase (accept 'P2' or { phase: 'P2' }) ───────────────────────────
-const PHASE = (
-  typeof args === "string" ? args : (args && args.phase) || ""
-).toUpperCase();
+// ─── target: 'P2' or { phase, attempt?, answers? } ────────────────────────────
+// The blocked-item protocol: a build that stops on ambiguity returns stoppedAt:"build"
+// with a `questions` map (see stage 2). The conductor answers and re-invokes FRESH with
+//   args: { phase, attempt: <n+1>, answers: { "<itemId>": "<answer>" } }
+// No resumeFromRunId needed for this path — completed items already ticked their
+// checklist boxes, so the re-read plan drops them from `open`, and the answers below are
+// injected into the still-open items' prompts so the same ambiguity cannot block twice.
+// (resumeFromRunId stays reserved for the conductor's stuck-kill recovery, where prompts
+// are byte-identical and the cached prefix replays.)
+const A = typeof args === "string" ? { phase: args } : args || {};
+const PHASE = (A.phase || "").toUpperCase();
+const ATTEMPT = Math.max(1, Number(A.attempt) || 1);
+const ANSWERS = A.answers && typeof A.answers === "object" ? A.answers : {};
 if (!/^P\d+$/.test(PHASE)) {
   throw new Error(
-    `execute-phase: pass a phase id like "P2" via args (got ${JSON.stringify(args)})`,
+    `execute-phase: pass a phase id like "P2" (or { phase, attempt, answers }) via args (got ${JSON.stringify(args)})`,
   );
 }
+// On attempt >1 these make the re-run prompts unique, so even a caller who DOES pass
+// resumeFromRunId can never replay a stale cached "blocked" result; on attempt 1 every
+// prompt stays byte-identical to preserve the stuck-resume cache replay.
+const ATTEMPT_TAG = ATTEMPT > 1 ? ` (attempt ${ATTEMPT})` : "";
+const retryNote =
+  ATTEMPT > 1
+    ? " A prior attempt stopped mid-phase — read the current state of the assigned files first and complete rather than redo work that already landed."
+    : "";
+const answerFor = (id) =>
+  ANSWERS[id]
+    ? `\nAnswer to your prior blocking question (authoritative clarification from the conductor — treat it as part of the brief): ${ANSWERS[id]}`
+    : "";
 
 // ─── schemas (validated at the tool layer; the model retries on a miss) ───────
 const PLAN = {
@@ -80,6 +101,8 @@ const BUILD = {
     state: { type: "string", enum: ["done", "blocked"] },
     filesTouched: { type: "array", items: { type: "string" } },
     note: { type: "string" },
+    // the ONE question whose answer unblocks the item — expected whenever state="blocked"
+    question: { type: "string" },
   },
 };
 
@@ -147,7 +170,7 @@ const GUARD = {
 // ─── stage 1: read the plan deterministically ────────────────────────────────
 phase("Read plan");
 const plan = await agent(
-  `Run \`node ${HARNESS}/scripts/phase-items.mjs ${PHASE}\` and return its JSON output verbatim — it is a deterministic parser of the plan (item list, file sets, isUI, and an overlap-computed "parallelizable"). Do NOT reinterpret or change any value. If it exits non-zero, surface the error.`,
+  `Run \`node ${HARNESS}/scripts/phase-items.mjs ${PHASE}\` and return its JSON output verbatim — it is a deterministic parser of the plan (item list, file sets, isUI, and an overlap-computed "parallelizable"). Do NOT reinterpret or change any value. If it exits non-zero, surface the error.${ATTEMPT_TAG}`,
   {
     schema: PLAN,
     label: `read-plan:${PHASE}`,
@@ -170,7 +193,7 @@ phase("Build");
 async function build(item) {
   return agent(
     `Implement work-item ${item.id} following the work-item skill and its brief (default path docs/redesign/work-item-${item.id}.md; honor harness.config.json → planDir if customized). Read the brief end-to-end plus everything in its "Inputs to read" block, match contracts.md verbatim, and stay strictly inside its "Files this item creates / edits" list and "Out of scope" bullets. Maintain your heartbeat at the status dir (harness.config.json → statusDir, default docs/redesign/.status/${item.id}.json): state running→done, bump lastBeat/step, keep criteriaDone/filesTouched current.
-Do STATIC self-checks only — run \`node ${HARNESS}/scripts/run-gate.mjs --no-runtime\` (configured lint + typecheck + test, no runtime verifier). Do NOT start a dev server or run the runtime verifier yourself — all runtime verification happens once at the phase gate, to avoid contention on the dev port. If the brief is ambiguous, set state "blocked" with a note instead of guessing.`,
+Do STATIC self-checks only — run \`node ${HARNESS}/scripts/run-gate.mjs --no-runtime\` (configured lint + typecheck + test, no runtime verifier). Do NOT start a dev server or run the runtime verifier yourself — all runtime verification happens once at the phase gate, to avoid contention on the dev port. If the brief is ambiguous, set state "blocked" with a note and the ONE question whose answer unblocks you in "question" — do not guess.${retryNote}${answerFor(item.id)}`,
     {
       agentType: "work-item-executor",
       schema: BUILD,
@@ -185,9 +208,13 @@ Do STATIC self-checks only — run \`node ${HARNESS}/scripts/run-gate.mjs --no-r
 // files the previous agent just wrote — measured at ~150k redundant tokens on a 3-item phase.
 async function buildChain(items) {
   const ids = items.map((i) => i.id);
+  const answered = ids.filter((id) => ANSWERS[id]);
+  const chainAnswers = answered.length
+    ? `\nAnswers to prior blocking questions (authoritative clarifications from the conductor — treat them as part of the briefs): ${answered.map((id) => `${id}: ${ANSWERS[id]}`).join(" · ")}`
+    : "";
   const chain = await agent(
     `Implement work-items ${ids.join(", ")} of phase ${PHASE} — all of them, one at a time, in exactly that order (it is a dependency chain). For EACH item in turn: follow the work-item skill and its brief (default path docs/redesign/work-item-<id>.md; honor harness.config.json → planDir if customized), read the brief end-to-end plus everything in its "Inputs to read" block, match contracts.md verbatim, and stay strictly inside its "Files this item creates / edits" list and "Out of scope" bullets. Maintain a heartbeat PER ITEM at the status dir (harness.config.json → statusDir, default docs/redesign/.status/<id>.json): state running→done, bump lastBeat/step, keep criteriaDone/filesTouched current. Read shared inputs (contracts.md, design source) ONCE — do not re-read them per item.
-After each item, run the configured typecheck (harness.config.json → runner.typecheck); after the FINAL item, run \`node ${HARNESS}/scripts/run-gate.mjs --no-runtime\` once (configured lint + typecheck + test, no runtime verifier). Do NOT start a dev server or run the runtime verifier yourself — all runtime verification happens once at the phase gate. If a brief is ambiguous, mark that item "blocked" with a note, do not guess, and do NOT attempt items that depend on it — mark those "blocked" too. Return one entry per assigned item.`,
+After each item, run the configured typecheck (harness.config.json → runner.typecheck); after the FINAL item, run \`node ${HARNESS}/scripts/run-gate.mjs --no-runtime\` once (configured lint + typecheck + test, no runtime verifier). Do NOT start a dev server or run the runtime verifier yourself — all runtime verification happens once at the phase gate. If a brief is ambiguous, mark that item "blocked" with a note and the ONE question whose answer unblocks it in its "question" field, do not guess, and do NOT attempt items that depend on it — mark those "blocked" too (their "question" can be "blocked by <id>"). Return one entry per assigned item.${retryNote}${chainAnswers}`,
     {
       agentType: "work-item-executor",
       schema: BUILD_CHAIN,
@@ -216,6 +243,10 @@ if (buildProblem.length || built.length < open.length) {
     .map((b) => b && b.id)
     .filter(Boolean)
     .join(", ");
+  const questions = {};
+  for (const b of built)
+    if (b && b.state === "blocked" && (b.question || b.note))
+      questions[b.id] = b.question || b.note;
   log(
     `${PHASE}: build stopped — ${ids || "an executor failed"} did not complete.`,
   );
@@ -223,8 +254,11 @@ if (buildProblem.length || built.length < open.length) {
     phase: PHASE,
     guarded: false,
     stoppedAt: "build",
+    attempt: ATTEMPT,
     mode: plan.mode,
     items: built,
+    questions,
+    resume: `answer the question(s), then re-run FRESH (no resumeFromRunId): Workflow({ name: "execute-phase", args: { phase: "${PHASE}", attempt: ${ATTEMPT + 1}, answers: { "<itemId>": "<answer>" } } }) — completed items are already ticked and will be skipped; the answers are injected into the blocked items' prompts`,
     reason: `build incomplete: ${ids || "executor failure"}`,
   };
 }
@@ -277,6 +311,7 @@ if (!gate.pass) {
     phase: PHASE,
     guarded: false,
     stoppedAt: "gate",
+    attempt: ATTEMPT,
     mode: plan.mode,
     items: built,
     gate,
@@ -327,6 +362,7 @@ while (true) {
       phase: PHASE,
       guarded: false,
       stoppedAt: "qa",
+      attempt: ATTEMPT,
       mode: plan.mode,
       items: built,
       qa,
@@ -377,6 +413,7 @@ return {
   phase: PHASE,
   guarded: guard.guarded,
   stoppedAt: guard.guarded ? "complete" : "guard",
+  attempt: ATTEMPT,
   mode: plan.mode,
   items: built,
   qa: { reportPath: qa.reportPath, openDefects: qa.defects },

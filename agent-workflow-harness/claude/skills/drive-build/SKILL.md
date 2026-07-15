@@ -37,14 +37,15 @@ You are a **thin driver**. Hold ONLY the phase checklist and each phase's compac
 4. **On verdict — verify, then decide.**
    - Independently run `node agent-workflow-harness/scripts/phase-guard.mjs <Pn>` (do not trust the verdict's self-reported `guarded`).
    - **guarded** → _auto_: advance to the next phase (back to step 1). _supervised_: summarize and pause for the user's go-ahead.
-   - **not guarded** / `stoppedAt: build+gate|qa` / unresolved blocking defects (any severity in `harness.config.json` → `gate.blockOn`, default `["critical","major"]`) → **STOP + escalate.** The merge barrier is absolute; never advance past an unguarded phase, even in auto.
+   - **BLOCKED with questions** — `stoppedAt: "build"` with a non-empty `questions` map means executors hit ambiguity they refused to guess through. Try to answer each question yourself from the plan artifacts ONLY (`contracts.md`, the architectural rules in `work-phases.md`, the item's brief — bounded reads; no source spelunking). If every question has a defensible answer, relaunch FRESH with the answers threaded in: `Workflow({ name: 'execute-phase', args: { phase: '<Pn>', attempt: <verdict.attempt + 1>, answers: { '<itemId>': '<answer>' } } })`. Completed items are already ticked and skip automatically; the answers are injected into the blocked executors' prompts, so the same ambiguity cannot block twice. At most **one** answered relaunch per phase — a second blocked verdict, or any question the plan artifacts can't answer, → **STOP + escalate** with the questions verbatim (when the user answers, relaunch the same way with their answers).
+   - **not guarded** / `stoppedAt: "build"` without questions / `stoppedAt: gate|qa` / unresolved blocking defects (any severity in `harness.config.json` → `gate.blockOn`, default `["critical","major"]`) → **STOP + escalate.** The merge barrier is absolute; never advance past an unguarded phase, even in auto.
 
 5. **Done** when the last in-range phase is guarded. Summarize the whole run: phases guarded, total items merged, anything deferred.
 
 ## Invariants (never violate)
 
 - **No unbounded wait.** Every wait has a deadline; you wake, check the heartbeat, and decide.
-- **No silent infinite retry.** Stuck → at most one resume → then escalate.
+- **No silent infinite retry.** Stuck → at most one resume; blocked → at most one answered relaunch — then escalate.
 - **The barrier is absolute.** Auto advances only past a `phase-guard`-passing phase. Unguarded or stuck → halt and page the human.
 - **Don't inline phase work.** Launch workflows; read verdicts. Keep your context to the checklist + verdicts.
 - **Gates are self-bounding.** The runtime verifier (`harness.config.json` → `runtime.verifier`) returns a verdict in seconds even on a fully frozen page, so a freeze can never hang you — if a phase stalls, it is a real stuck agent, treat it as one.

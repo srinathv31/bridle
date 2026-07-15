@@ -27,10 +27,12 @@ Use this for phases you want to scrutinize closely. For hands-off multi-phase ru
 
 5. **Report, then STOP.** Summarize: guarded yes/no, items merged, attempts/fixes, any open defects. Point the user at the diff and the phase QA report in the plan dir (default `docs/redesign/phase-<Pn>-qa.md`). Then **stop** — do not precheck or launch the next phase. The user advances by invoking `/run-phase` again for the next phase, or switching to `/drive-build`.
 
+   **Blocked build:** a verdict of `stoppedAt: "build"` with a `questions` map means the executors hit ambiguity and stopped rather than guess. Surface each question to the user verbatim. When the user answers, relaunch the **same** phase fresh with the answers threaded in — `Workflow({ name: 'execute-phase', args: { phase: '<Pn>', attempt: <verdict.attempt + 1>, answers: { '<itemId>': '<answer>' } } })`. Completed items are already ticked and skip; the answers are injected into the blocked executors' prompts. (Re-running the same phase after answers is not phase-chaining — the one-invocation-one-phase rule is about advancing.)
+
 ## Hard rules
 
 - **One invocation = one phase.** Never chain phases here.
 - **Red precheck = no launch.**
 - **A phase is done only when `phase-guard` passes** — boxes checked is not enough.
 - **You are the conductor, not a builder** — never edit `src/` yourself; the workflow's executors do that.
-- If the workflow returns `stoppedAt: build+gate` or `qa` (couldn't gate/clear defects), report that as a **defect to fix**, not a pass — and do not advance.
+- If the workflow returns `stoppedAt: gate` or `qa` (couldn't gate/clear defects), report that as a **defect to fix**, not a pass — and do not advance. `stoppedAt: "build"` with questions is the blocked-clarification path in step 5, not a defect.
