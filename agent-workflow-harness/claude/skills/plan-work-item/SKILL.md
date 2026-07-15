@@ -51,7 +51,7 @@ Pause and ask if:
 
 ## 4. Produce `docs/redesign/work-phases.md`
 
-Start from `agent-workflow-harness/templates/work-phases.template.md`. This file is the orchestrator's map. It contains three sections:
+Start from `agent-workflow-harness/templates/work-phases.template.md`. This file is the orchestrator's map. Fill the `**Repo:**` pin under the title with the repo's root folder name — `precheck` refuses to dispatch from a working directory that doesn't match it, which guards against wrong-repo session resumes. It contains three sections:
 
 **Architectural rules** — the load-bearing constraints every execution agent must honor. Examples: "no `cva` for editorial primitives," "no barrel `index.ts` files," "no inline color hex values — theme tokens only," "no emoji in UI titles." Pull these from the codebase's existing conventions plus any rule the design imposes.
 
@@ -94,6 +94,10 @@ One paragraph. What does done look like for this item.
 - src/.../Foo.tsx  (create)
 - src/.../bar.ts   (edit)
 
+## Requires        (only when the item needs anything from outside the repo)
+- env: SERVICE_API_KEY — which call needs it
+- cmd: node scripts/probe-service.mjs — must exit 0 (proves the external dependency is alive)
+
 ## Implementation notes
 Concrete guidance — not the full implementation, but enough that the
 executing agent doesn't have to guess at intent. Reference specific
@@ -124,6 +128,7 @@ Each work-item must have:
 - Acceptance criteria phrased so each is checkable against an artifact — a command and its output, a `file:line`, a screenshot, or a gate's exit code — never a subjective "looks right." Downstream, both the executor and QA must be able to cite proof, not assert.
 - An explicit out-of-scope section — silence here is a planning failure
 - A clear list of files it creates and edits, used to detect cross-item file conflicts
+- A `## Requires` section whenever the item touches anything outside the repo — API keys (`env:`), gitignored credential files (`file:`), a live external service / credit balance / migration state (`cmd:` probe). `precheck` verifies every line before dispatch, so a missing key blocks in seconds instead of mid-build; an undeclared external dependency that blocks an executor is a planning failure
 
 ## 7. Verify the plan is internally consistent
 

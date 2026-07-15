@@ -21,9 +21,15 @@
   • phase-items.mjs computes parallel-safety from the REAL file-set overlap of each item's
     "## Files this item creates / edits" list in its work-item-<id>.md — it overrides a brief's
     self-reported "Parallel-safe" claim. The table's Mode is your intent; the file sets are the truth.
+
+  • precheck.mjs additionally reads the optional "**Repo:**" pin below the title (refuses dispatch
+    from a mismatched working directory — guards wrong-repo session resumes) and each brief's
+    optional "## Requires" section (env/file/cmd preflight, verified before any dispatch).
 -->
 
 # <Project / epic name> — Work Phases
+
+**Repo:** <root folder name of this repo — leave the angle brackets in place to skip the check>
 
 Orchestrator map for building <one-line description of what this plan delivers>. This file is the
 source of truth for which work-items belong to which phase, what runs in parallel, and what blocks

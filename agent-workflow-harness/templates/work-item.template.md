@@ -37,6 +37,20 @@ rather than leaving them implicit.>
 - `<path/to/file-a.test.ext>` (create — colocated test)
 - `<path/to/existing-file>` (edit — <the specific, narrow change>)
 
+## Requires
+
+<!-- OPTIONAL — delete the whole section if this item needs nothing from outside the repo.
+     Everything the item needs from the WORLD, one bullet per need; precheck.mjs verifies each
+     line BEFORE dispatch, so a missing key fails in seconds instead of 40 minutes into a build.
+       env:  <KEY>            — set in the environment or a root .env* file
+       file: <path>           — exists at the project root (e.g. gitignored credentials)
+       cmd:  <shell command>  — exits 0 within 30s (probe an external service, credits, migration state)
+     A trailing " — <why>" note is allowed; the parser ignores it. -->
+
+- env: <SERVICE_API_KEY> — <which call needs it>
+- file: <path/to/gitignored-credentials> — <what reads it>
+- cmd: <command that proves the external dependency is alive> — <what it probes>
+
 ## Acceptance criteria
 
 <!-- Each criterion must be checkable against an ARTIFACT (a command + its real output, a file:line,
