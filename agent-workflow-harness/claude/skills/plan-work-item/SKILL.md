@@ -40,6 +40,8 @@ Before writing any files, write a short plan in the conversation that includes:
 - The contracts (typed surfaces) where one work-item's output feeds another's input
 - Any open questions about the brief or codebase
 
+**Partition by file ownership.** The engine runs a phase's items in parallel only when their "Files this item creates / edits" sets are pairwise disjoint — computed mechanically by `phase-items.mjs`, overriding whatever the briefs claim. Decompose toward disjointness: if two items must edit the same file, either merge them into one item or make them an explicit dependency chain (the engine collapses a sequential chain into ONE executor, which is token-cheap — but disjoint-parallel is the fastest wall-clock shape). The most common accidental serializer is a shared "hub" file (a barrel, a route map, a nav or config file): give the hub its own small item that lands after its parallel siblings, instead of letting every sibling touch it.
+
 Share this with the user and wait for confirmation before producing file artifacts. **This is the most important checkpoint in the whole workflow — if the decomposition is wrong, every downstream artifact is wrong.**
 
 Pause and ask if:
@@ -137,7 +139,7 @@ After producing all files, do one pass to check:
 - Every work-item ID in the phase table has a brief
 - Every brief's `Depends on:` references an ID that exists
 - Every contract in `contracts.md` is produced by exactly one work-item and consumed by at least one
-- No two parallel-marked work-items in the same phase edit the same file (cross-reference each brief's "Files this item creates / edits" section)
+- No two parallel-marked work-items in the same phase edit the same file — don't eyeball it: run `node agent-workflow-harness/scripts/phase-items.mjs <Pn>` for each phase and confirm its computed `parallelizable` matches the Mode you wrote in the phase table (its `warnings` name the offending shared paths)
 - The progress checklist matches the phase table
 
 If any of these fails, fix it before handing off. Inconsistencies here become bugs at execution time.

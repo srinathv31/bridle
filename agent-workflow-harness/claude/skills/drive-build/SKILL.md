@@ -28,17 +28,19 @@ You are a **thin driver**. Hold ONLY the phase checklist and each phase's compac
 
 2. **Launch in background.** `Workflow({ name: 'execute-phase', args: '<Pn>' })`. Record the returned `runId`. The workflow notifies you on completion — you are **not** blocked waiting on it.
 
-3. **Supervise — the watchdog.** While the run is in flight, never wait blindly:
-   - Poll the phase heartbeat on an interval — `node agent-workflow-harness/scripts/subagent-status.mjs` (reads the status dir, `harness.config.json` → `statusDir`, default `docs/redesign/.status/`). Schedule the next check with `ScheduleWakeup` (~270s to stay cache-warm; tighter for small phases).
+3. **Supervise — the watchdog.** While the run is in flight, never wait blindly — but don't poll on a ticker either:
+   - **Size the watch to the phase.** Estimate the expected duration up front: ~10 min per open item + ~15 min of gate+QA overhead (calibrate from your `build-log.md` history once it exists). The workflow's completion notification is the PRIMARY signal; wakeups are the fallback watchdog, not a progress ticker.
+   - Schedule the FIRST check (`ScheduleWakeup`) at ~60% of the estimate, then every ~5 min until the estimate elapses, then every ~3 min. Each wake runs `node agent-workflow-harness/scripts/subagent-status.mjs` (reads the status dir, `harness.config.json` → `statusDir`, default `docs/redesign/.status/`). Fixed short-interval polling is the conductor's single biggest cost — every wake re-reads your whole context as cache, and ~20 wakes/phase was measured at real dollars for zero information.
    - Fresh beats / completion still pending → keep waiting.
    - **STUCK** — `subagent-status` exits `1` (a `running` item whose `lastBeat` is stale), or no completion past the per-phase wall-clock cap → kill the run (`TaskStop` on the `runId`) and **resume once**: `Workflow({ name: 'execute-phase', args: '<Pn>', resumeFromRunId: <runId> })` (the cached prefix makes the re-run cheap). Still stuck after one resume → **STOP + escalate**. Never silently re-spawn in a loop.
-   - **Wall-clock cap** per phase (default ~30 min) exceeded → **STOP + escalate**.
+   - **Wall-clock cap** per phase (default 2× your estimate, minimum ~30 min) exceeded → **STOP + escalate**.
 
 4. **On verdict — verify, then decide.**
    - Independently run `node agent-workflow-harness/scripts/phase-guard.mjs <Pn>` (do not trust the verdict's self-reported `guarded`).
    - **guarded** → _auto_: advance to the next phase (back to step 1). _supervised_: summarize and pause for the user's go-ahead.
    - **BLOCKED with questions** — `stoppedAt: "build"` with a non-empty `questions` map means executors hit ambiguity they refused to guess through. Try to answer each question yourself from the plan artifacts ONLY (`contracts.md`, the architectural rules in `work-phases.md`, the item's brief — bounded reads; no source spelunking). If every question has a defensible answer, relaunch FRESH with the answers threaded in: `Workflow({ name: 'execute-phase', args: { phase: '<Pn>', attempt: <verdict.attempt + 1>, answers: { '<itemId>': '<answer>' } } })`. Completed items are already ticked and skip automatically; the answers are injected into the blocked executors' prompts, so the same ambiguity cannot block twice. At most **one** answered relaunch per phase — a second blocked verdict, or any question the plan artifacts can't answer, → **STOP + escalate** with the questions verbatim (when the user answers, relaunch the same way with their answers).
    - **not guarded** / `stoppedAt: "build"` without questions / `stoppedAt: gate|qa` / unresolved blocking defects (any severity in `harness.config.json` → `gate.blockOn`, default `["critical","major"]`) → **STOP + escalate.** The merge barrier is absolute; never advance past an unguarded phase, even in auto.
+   - **Log the verdict — every outcome.** Append one row to `<planDir>/build-log.md`, creating it with this header if missing: `| date | phase | verdict | attempts | wall-min | items | stoppedAt | notes |`. One row per phase outcome, e.g. `| 2026-07-15 | P4 | guarded | 2 | 41 | 3 | complete | 1 answered relaunch |` — date and wall-min from real clock reads (`date`), not memory. Five seconds of bookkeeping per phase is what makes harness tuning measurable later.
 
 5. **Done** when the last in-range phase is guarded. Summarize the whole run: phases guarded, total items merged, anything deferred.
 
