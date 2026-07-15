@@ -105,15 +105,15 @@ node ~/agent-workflow-harness/install.mjs              # installs into the curre
 It is **idempotent** (re-run to update) and does all of this:
 
 1. **Vendors the kit** → `<project>/agent-workflow-harness/` (scripts, lib, verifiers, hooks, …).
-2. **Installs the Claude Code bindings** → `<project>/.claude/skills` (7), `.claude/agents` (3),
+2. **Installs the Claude Code bindings** → `<project>/.claude/skills` (8), `.claude/agents` (3),
    `.claude/workflows/execute-phase.js`.
 3. **Merges the lint/format hooks** into `<project>/.claude/settings.json` (preserves your existing
    settings; never duplicates).
 4. **Writes `<project>/harness.config.json`** from the template, **autodetecting** your package
    manager's `lint`/`typecheck`/`test`/`build`/`dev` verbs (pnpm/npm/yarn, and starter guesses for
    Python/Go/Rust/Ruby). Won't overwrite an existing config without `--force`.
-5. **Creates the plan dir** (`docs/redesign/`, seeded with `work-phases`/`contracts` templates) and
-   **gitignores** the status dir.
+5. **Creates the plan dir** (`docs/redesign/`, seeded with `work-phases`/`contracts`/`defect-ledger`
+   templates) and **gitignores** the status dir.
 
 Then **review `harness.config.json`** — the installer gets you 90% there, but confirm:
 
