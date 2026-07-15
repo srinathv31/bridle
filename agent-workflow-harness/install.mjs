@@ -153,11 +153,11 @@ function scaffoldPlanDir(target) {
   mkdirSync(statusDir, { recursive: true });
   // copy the templates into the plan dir as starting points (don't overwrite real plans)
   const tdir = join(SELF, "templates");
-  for (const [tpl, out] of [["work-phases.template.md", "work-phases.md"], ["contracts.template.md", "contracts.md"]]) {
+  for (const [tpl, out] of [["work-phases.template.md", "work-phases.md"], ["contracts.template.md", "contracts.md"], ["defect-ledger.template.md", "defect-ledger.md"]]) {
     const o = join(planDir, out);
     if (!existsSync(o) && existsSync(join(tdir, tpl))) cpSync(join(tdir, tpl), o);
   }
-  ok(`created ${cfg.planDir} (with work-phases/contracts templates) + ${cfg.statusDir}`);
+  ok(`created ${cfg.planDir} (with work-phases/contracts/defect-ledger templates) + ${cfg.statusDir}`);
 
   const gi = join(target, ".gitignore");
   const rel = (cfg.statusDir || "docs/redesign/.status") + "/";

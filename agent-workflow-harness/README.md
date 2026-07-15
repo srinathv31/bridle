@@ -53,7 +53,7 @@ agent-workflow-harness/          # this repo — clone once, reuse everywhere
     index.mjs · web.mjs · none.mjs
   hooks/                         # lint-check.sh + format-on-write.sh (thin wrappers → hook-runner)
   roles/README.md                # the guide an AI agent reads to find its role + the disciplines
-  templates/                     # work-phases / contracts / work-item skeletons the planner fills in
+  templates/                     # work-phases / contracts / work-item / defect-ledger skeletons the planner fills in
   claude/                        # the Claude Code binding pack → installed into <target>/.claude/
     skills/  (init-harness · plan-work-item · work-item · orchestrate · run-phase · drive-build · phase-qa · polish-qa)
     agents/  (work-item-executor · phase-qa · phase-qa-verify)

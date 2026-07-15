@@ -20,7 +20,7 @@ Follow the `phase-qa` skill at `.claude/skills/phase-qa/SKILL.md`. The skill wil
 3. For each defect: verify the fix at source level (read the file, check the change exists) and at runtime via Playwright MCP (drive the surface, check the symptom is gone).
 4. Run the configured typecheck and build command (`harness.config.json` → `runner.typecheck` and `runner.build`) at the integration level (skip lint).
 5. Take a smoke screenshot of each major touched surface — watch for regressions, not exhaustive drift.
-6. Flag any new defects you spot during the smoke pass. New defects in verify mode are higher-priority than minor drift — they indicate the fix-pass had side effects.
+6. Flag any new defects you spot during the smoke pass. New defects in verify mode are higher-priority than minor drift — they indicate the fix-pass had side effects. New CRITICAL/MAJOR finds go in your pass file; new MINORS are appended to `<planDir>/defect-ledger.md` per its header protocol instead — and anything already listed there is known, so do not re-prove or re-report it.
 7. Annotate the base report `<planDir>/phase-<id>-qa.md`: mark each defect you verified FIXED as **RESOLVED (verified pass <N>)** with one line of fix evidence, and update its counts line (e.g. `1 major (resolved) · 1 minor`). `phase-guard` gates the merge barrier on that base file — leaving a resolved blocker reading as open in its header misleads whoever (human or conductor) makes the barrier call.
 8. Before returning, run `node agent-workflow-harness/scripts/qa-check.mjs` on BOTH files you touched — the pass file you wrote and the base report you annotated — until each exits 0. Every `FIXED` / `STILL BROKEN` verdict must cite the `file:line` you read and the screenshot you took; every quote must be verbatim from its cited source. Exit 1 means a citation is missing or a quote is confabulated — fix the report before handing off.
 
@@ -28,7 +28,7 @@ Follow the `phase-qa` skill at `.claude/skills/phase-qa/SKILL.md`. The skill wil
 
 ## Disciplines
 
-- **Read-only** with respect to production code. The only files you write are the defect list at `<planDir>/phase-<id>-qa-pass<N>.md`, screenshots under `<planDir>/phase-<id>-qa-pass<N>-screenshots/`, and the RESOLVED annotations in the base `<planDir>/phase-<id>-qa.md`. Do not touch anything under your project's production-code directories (your configured source dirs).
+- **Read-only** with respect to production code. The only files you write are the defect list at `<planDir>/phase-<id>-qa-pass<N>.md`, screenshots under `<planDir>/phase-<id>-qa-pass<N>-screenshots/`, the RESOLVED annotations in the base `<planDir>/phase-<id>-qa.md`, and appended minor rows in `<planDir>/defect-ledger.md`. Do not touch anything under your project's production-code directories (your configured source dirs).
 - **Use Playwright MCP.** Say `use playwright mcp` before the first browser action.
 - **Evidence-or-reject.** Each verdict cites the source `file:line` you verified and the screenshot path you captured; a bare `FIXED` is not acceptable. Quote sources verbatim and cite them — never reconstruct a quote from memory. `node agent-workflow-harness/scripts/qa-check.mjs` enforces this mechanically before you hand off.
 - **Trust the prior pass.** Don't re-derive the full contract surface, the architectural rule list, or the full set of acceptance criteria. The prior pass file is your map.

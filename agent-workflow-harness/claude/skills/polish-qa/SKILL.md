@@ -16,7 +16,7 @@ The invocation names the scope — a phase range (`P0–P3`), a list, or "everyt
 - Find prior polish reports (`<planDir>/polish-qa-*.md`, `planDir` defaults to `docs/redesign/`; see `harness.config.json` → `planDir`) and take every **guarded** phase not covered by one.
 - Only guarded phases are in scope (`node agent-workflow-harness/scripts/phase-guard.mjs` exits 0 for them). Polish QA on an unguarded phase produces noise — send that back through `phase-qa` first.
 
-Read, for every phase in scope: the work-item briefs (`<planDir>/work-item-<id>.md`), `<planDir>/contracts.md`, the phase's `phase-<id>-qa*.md` reports (deferred/minor defects logged there are your starting checklist), and the design source each brief points at.
+Read, for every phase in scope: the work-item briefs (`<planDir>/work-item-<id>.md`), `<planDir>/contracts.md`, the phase's `phase-<id>-qa*.md` reports, **`<planDir>/defect-ledger.md` — its `open` rows are your starting checklist** (each row cites the QA report holding its detail), and the design source each brief points at.
 
 ## 2. Evidence discipline
 
@@ -68,7 +68,7 @@ Write `<planDir>/polish-qa-<scope>.md` (e.g. `polish-qa-P0-P3.md`):
 
 Use `phase-qa`'s defect formats and severity guidance (critical = broken, major = functionally wrong, minor = cosmetic/edge-case). Expect most polish findings to be minor — that is normal and correct. A critical or major finding here means something slipped past a functional gate: flag it prominently, since it may indicate a `phase-qa` coverage gap worth fixing in that skill's route/interaction config.
 
-**Polish defects do not block phase barriers.** They feed a fix backlog: recommend either dispatching work-item-executor fixes for the majors or planning a dedicated polish fix phase via `plan-work-item` for a large minor pile.
+**Polish defects do not block phase barriers.** They feed a fix backlog: recommend either dispatching work-item-executor fixes for the majors or planning a dedicated polish fix phase via `plan-work-item` for a large minor pile. Keep `defect-ledger.md` current as you go: annotate each `open` row you re-verified (still real vs already fixed in passing), append rows for new minors per its header protocol, and when a fix batch lands, whoever fixed a row flips its Status to `fixed` with one line of evidence.
 
 ## What this skill does not cover
 

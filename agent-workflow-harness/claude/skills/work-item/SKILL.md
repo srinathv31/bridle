@@ -34,6 +34,8 @@ Things to pause on:
 
 State the question, list the options you considered, and recommend one. Wait for the user before continuing. Continue this feedback loop — ask, get an answer, implement the next chunk, ask again if needed — until the work-item is fully done.
 
+**Harness-dispatched executors cannot converse.** If you were spawned by the `execute-phase` workflow, pause-and-ask means: return `state: "blocked"` with a note and the ONE question whose answer unblocks you in the `question` field, then stop — do not guess. The conductor relays the question and re-dispatches you with the answer injected into your prompt; treat that answer as an authoritative part of the brief.
+
 ## 3. Implement, scoped tightly to the brief
 
 - Edit only the files listed in **Files this item creates / edits**.
@@ -45,7 +47,12 @@ State the question, list the options you considered, and recommend one. Wait for
 
 ## 4. Verification — only after implementation is complete
 
-Run your STATIC self-checks in order, and only after you believe the code is done. Don't run them between every edit; that creates noise and breaks focus. Executors run static self-checks only — lint plus typecheck — the configured lint and typecheck commands (`harness.config.json` → `runner.lint` and `runner.typecheck`):
+**Which checks are yours depends on how you were dispatched:**
+
+- **Harness-dispatched** (spawned by the `execute-phase` workflow, or any orchestrator prompt that says "static self-checks only"): run ONLY the static checks below. The phase gate owns ALL runtime verification — one dev server, one runtime-verifier run, one browser pass for the whole phase — so a per-item dev server fights the gate for the port and re-buys coverage the phase already gets once. Skip the two runtime sections below and the runtime parts of the final walk-through. Your dispatch prompt wins over this skill wherever they disagree.
+- **Standalone** (a human assigned you one item and no phase gate is coming): run the full protocol including both runtime sections — you are the only verification this item will get.
+
+Run your STATIC self-checks in order, and only after you believe the code is done. Don't run them between every edit; that creates noise and breaks focus. The static set is the configured lint and typecheck commands (`harness.config.json` → `runner.lint` and `runner.typecheck`):
 
 ```bash
 node agent-workflow-harness/scripts/run-gate.mjs --no-runtime   # configured lint + typecheck + test, runtime verifier skipped
@@ -55,7 +62,9 @@ The runtime check is **not** your job here — it happens once at the phase gate
 
 If a check fails, fix the underlying issue and re-run. Don't bypass with linter-suppression / type-escape comments unless the brief explicitly allows it. Scaffold is excluded at the linter-config level (in your linter's ignore config, e.g. the generated UI primitives plus the listed hooks), so **any lint finding on a non-ignored file is real** — never wave it off as "scaffold" or "pre-existing" noise. The lint hook enforces this live: it blocks (exit 2) on errors and surfaces warnings as context. Fix the cause; don't silence the rule.
 
-### Runtime verification with Playwright MCP
+**Both modes:** if you created a brand-new route, add it (and the interactions that exercise it) to `runtime.web.routes` in `harness.config.json` — the phase gate and the verifier only catch a freeze on a route they actually drive. This is the one allowed edit outside your brief's file list; mention it in your summary.
+
+### Runtime verification with Playwright MCP (standalone mode only)
 
 For any work-item with runtime acceptance criteria — anything phrased as "the dropdown opens," "the form submits," "the page renders X," "the table sorts by Y" — validate against the running app via Playwright MCP, not by inspection of the code. Code that typechecks and lints can still render wrong; runtime checks are the only thing that catches that class of bug.
 
@@ -74,7 +83,7 @@ If Playwright MCP isn't configured for this project, stop and tell the user. Don
 
 For backend-only or pure-utility work-items with no runtime acceptance criteria, skip this step. The brief itself tells you whether runtime checks apply.
 
-### Runtime verifier (any work-item that touches a UI route)
+### Runtime verifier (standalone mode only — any work-item that touches a UI route)
 
 Before marking a UI work-item complete, run the runtime verifier (`harness.config.json` → `runtime.verifier`) on the routes you touched. With the `web` verifier this is a Playwright freeze-canary that loads each route, drives its interactive surfaces, and re-probes responsiveness; `none` is a no-op for non-UI projects; or it can point at a custom adapter:
 
@@ -85,15 +94,13 @@ node agent-workflow-harness/scripts/run-gate.mjs        # the configured static 
 
 Exit `0` = all routes stayed responsive; proceed. Exit `1` = a route went unresponsive (`FROZEN`/`FAIL`) — that is a real app defect in your work, **fix it before completing the item**; never attribute it to Playwright/Radix/tooling. Exit `2` = probe inconclusive (re-run); exit `3` = verifier setup error, e.g. Chrome/`playwright-core` missing (report to the orchestrator).
 
-If you created a brand-new route, add it (and the interactions that exercise it) to `runtime.web.routes` in `harness.config.json` so the verifier actually drives it — it only catches a freeze on an interaction it drives. This is the one allowed edit outside your brief's file list; mention it in your summary.
-
 ### Final acceptance walk-through
 
-Walk through the brief's **Acceptance criteria** checkbox-by-checkbox and confirm each one. Only flip checkboxes whose criteria you actually verified — no checking by faith. Each box you check must have a concrete artifact behind it: the command and its real output, the screenshot, or the `file:line` — not an assumption that it probably works. For UI items, run the configured dev command and exercise the page in a browser via Playwright MCP one last time end-to-end; type checks pass ≠ feature works. The runtime verifier must be green (exit 0) for every route this item touches before any box is checked.
+Walk through the brief's **Acceptance criteria** checkbox-by-checkbox and confirm each one. Only flip checkboxes whose criteria you actually verified — no checking by faith. Each box you check must have a concrete artifact behind it: the command and its real output, the screenshot, or the `file:line` — not an assumption that it probably works. **Standalone mode:** for UI items, run the configured dev command and exercise the page in a browser via Playwright MCP one last time end-to-end (type checks pass ≠ feature works), and the runtime verifier must be green (exit 0) for every route this item touches before any box is checked. **Harness-dispatched:** runtime-phrased criteria are verified once at the phase gate and by phase-qa, not by you — verify statically what you can, note the runtime criteria as "deferred to gate" in your summary, and never claim runtime proof you didn't produce.
 
 ## 5. Mark the work-item complete
 
-Once every acceptance criterion is satisfied AND lint / typecheck / tests / Playwright runtime checks are green:
+Once every acceptance criterion you own is satisfied AND your mode's checks are green (standalone: lint / typecheck / tests / Playwright runtime; harness-dispatched: the static set — the phase gate owns the rest):
 
 1. Open `<planDir>/work-phases.md`.
 2. In the **Progress checklist** section, find the row for this work-item ID and flip `- [ ]` to `- [x]`.

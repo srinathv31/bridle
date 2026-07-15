@@ -216,6 +216,10 @@ For cosmetic or edge-case issues the phase could ship without:
 
 No separate sections, no screenshot unless the visual is the only viable way to describe it.
 
+### Known minors — the defect ledger
+
+Before writing your report, read `<planDir>/defect-ledger.md`. Anything listed there is a KNOWN minor: do not re-prove it, do not re-screenshot it, do not re-report it as a new defect. (A regression of a `fixed` row, or a listed minor that has become functionally blocking, is a NEW defect at the appropriate severity — file it in the report.) After writing your report, APPEND one ledger row per NEW minor you found, per the ledger's own header protocol, citing your report for the detail. Minors get discovered and proved exactly once; the ledger is the standing fix queue, and it never blocks a barrier.
+
 ### Severity guidance
 
 - **Critical** — phase doesn't work. Liveness failures (a route freezes on interaction), static-check failures, broken integration seams, a primary flow that fails entirely. The phase cannot ship in this state.
