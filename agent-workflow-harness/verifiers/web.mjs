@@ -10,12 +10,25 @@
 // flakiness, NOT a freeze. An action after which the page is UNRESPONSIVE is a real freeze. We
 // re-probe after every action to tell them apart.
 //
-// Reads everything from harness.config.json → runtime.web: { baseUrl, browserChannel, routes:
-// [{ path, interactions: [{ label, role, name }] }] }. The gate only catches a freeze on an
-// interaction it actually drives, so list each route's real controls there.
+// Reads everything from harness.config.json → runtime.web: { baseUrl, browserChannel, auth?,
+// routes: [{ path, auth?, interactions: [{ label, role, name }] }] }. The gate only catches a
+// freeze on an interaction it actually drives, so list each route's real controls there.
+//
+// AUTH: routes behind a session (e.g. RLS-gated pages that notFound() for anon) set auth: true
+// and run in a shared context that logged in ONCE via runtime.web.auth — { credentialsFile,
+// loginPath, emailLabel, passwordLabel, submit: { role, name } }. Credentials are READ AT RUNTIME
+// from the gitignored credentialsFile; they never live in this config or in the report. A failed
+// login is SETUP (fails loud) — otherwise auth routes would silently degrade to load-only checks.
+//
+// HYDRATION: dev-mode SSR paints an interactive-looking page before the framework attaches
+// handlers; fills/clicks in that gap are silently swallowed (login flaked SETUP this way under
+// Turbopack). Login and route interactions wait for a deterministic hydration marker (framework
+// expando keys on the target element) before acting — see waitForHydration.
 //
 // REQUIRES playwright-core + a Chrome channel (or swap to full `playwright` + `playwright install`).
 // Invoke standalone:  node verifiers/web.mjs   ·   HEADED=1 node verifiers/web.mjs
+
+import { readFileSync } from "node:fs";
 
 import { loadConfig } from "../lib/config.mjs";
 import { exitCodeFor } from "./index.mjs";
@@ -25,6 +38,9 @@ const WINDOW_MS = 800;
 const PROBE_HARD_MS = 12000;
 const GOTO_MS = 20000;
 const ACTION_MS = 6000;
+const LOGIN_MS = 20000;
+const HYDRATION_MS = 10000;
+const LOGIN_ATTEMPTS = 2;
 
 function withTimeout(promise, ms, onTimeout) {
   let t;
@@ -67,6 +83,123 @@ async function probe(page) {
   return { state, frames: r.frames ?? null, timerDelay: r.timerDelay ?? null, timedOut: !!r.timedOut };
 }
 
+// Dev-mode SSR (e.g. Next.js under Turbopack) paints a complete, clickable-looking page long
+// before the framework hydrates it. An input filled in that gap is wiped when hydration replays
+// the controlled value, and a click is dispatched into a void with no handler attached — the
+// action "succeeds" but drives nothing. Waiting for load states can't see this; the DOM is done.
+// What CAN see it: React/Vue stamp internal expando keys (__reactFiber$…, __reactProps$…,
+// __vueParentComponent) onto every DOM node they hydrate, so their appearance on the target
+// element is a deterministic hydration-complete signal. Unknown frameworks (or no client JS)
+// never get a marker — fall back to networkidle so this stays best-effort, bounded, and never
+// throws.
+async function waitForHydration(page, locator, timeoutMs) {
+  let handle;
+  try {
+    handle = await locator.first().elementHandle({ timeout: timeoutMs });
+  } catch {
+    return false; // element never appeared — the caller's own action will report that properly
+  }
+  const hydrated = await page
+    .waitForFunction(
+      (el) => {
+        const marked = (node) =>
+          Object.keys(node).some(
+            (k) => k.startsWith("__reactFiber$") || k.startsWith("__reactProps$") || k.startsWith("__vueParentComponent"),
+          );
+        for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+          if (marked(n)) return true;
+        }
+        return false;
+      },
+      handle,
+      { timeout: timeoutMs },
+    )
+    .then(() => true)
+    .catch(() => false);
+  if (!hydrated) {
+    await page.waitForLoadState("networkidle", { timeout: timeoutMs }).catch(() => {});
+  }
+  return hydrated;
+}
+
+// Accepts JSON ({ email, password }), markdown "**Email:** `x`" lines, or plain "email: x" /
+// "EMAIL=x" lines — so a human-readable gitignored credentials doc works as-is.
+function parseCredentials(text) {
+  try {
+    const j = JSON.parse(text);
+    if (j && typeof j === "object") return { email: j.email, password: j.password };
+  } catch {
+    // not JSON — fall through to line formats
+  }
+  const grab = (key) => {
+    const md = text.match(new RegExp("\\*\\*" + key + ":?\\*\\*:?\\s*`([^`]+)`", "i"));
+    if (md) return md[1];
+    const kv = text.match(new RegExp("^\\s*" + key + "\\s*[:=]\\s*(\\S+)\\s*$", "im"));
+    return kv ? kv[1] : undefined;
+  };
+  return { email: grab("email"), password: grab("password") };
+}
+
+// Log in once; returns { ctx } on success or { error } (message only — never the credentials).
+async function login(browser, auth, BASE, cfg) {
+  let creds;
+  try {
+    creds = parseCredentials(readFileSync(cfg.abs(auth.credentialsFile), "utf8"));
+  } catch (e) {
+    return { error: `could not read auth credentialsFile ${auth.credentialsFile}: ${e.message}` };
+  }
+  if (!creds.email || !creds.password) {
+    return { error: `no email/password found in ${auth.credentialsFile} (expected JSON, "**Email:** \`x\`", or "email: x" lines)` };
+  }
+  const loginPath = auth.loginPath || "/login";
+  const submit = auth.submit || { role: "button", name: "Sign in" };
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const r = await withTimeout(
+    (async () => {
+      const emailLoc = page.getByLabel(auth.emailLabel || "Email");
+      const passwordLoc = page.getByLabel(auth.passwordLabel || "Password");
+      const submitLoc = page.getByRole(submit.role, { name: submit.name });
+      await page.goto(BASE + loginPath, { waitUntil: "domcontentloaded", timeout: GOTO_MS });
+      let lastError = null;
+      for (let attempt = 1; attempt <= LOGIN_ATTEMPTS; attempt++) {
+        // never fill/click a form the framework hasn't taken over yet (see waitForHydration)
+        await waitForHydration(page, submitLoc, HYDRATION_MS);
+        await emailLoc.fill(creds.email, { timeout: ACTION_MS });
+        await passwordLoc.fill(creds.password, { timeout: ACTION_MS });
+        await submitLoc.click({ timeout: ACTION_MS });
+        // success = we navigated off the login page; staying put means bad creds or a broken form
+        const navigated = await page
+          .waitForURL((u) => new URL(u).pathname !== loginPath, { timeout: LOGIN_MS })
+          .then(() => true)
+          .catch((e) => {
+            lastError = String(e).split("\n")[0];
+            return false;
+          });
+        if (navigated) return { ok: true };
+        // Discriminate WHY we're still here: if the email field no longer holds what we typed,
+        // the fill/click was swallowed (late hydration wipe or a native no-handler form reload)
+        // — tooling race, retry. If it survived, the form is live and the login itself was
+        // rejected — retrying identical credentials can't help, fail loud now.
+        const wiped = await emailLoc
+          .inputValue({ timeout: 2000 })
+          .then((v) => v !== creds.email)
+          .catch(() => true);
+        if (!wiped) return { ok: false, error: "form is interactive but login was rejected (check credentials)" };
+      }
+      return { ok: false, error: lastError || "stayed on " + loginPath };
+    })().catch((e) => ({ ok: false, error: String(e).split("\n")[0] })),
+    GOTO_MS + LOGIN_ATTEMPTS * (HYDRATION_MS + 3 * ACTION_MS + LOGIN_MS) + 5000,
+    { ok: false, error: "login hard-timed out" },
+  );
+  await withTimeout(page.close().catch(() => {}), 5000, null);
+  if (!r.ok) {
+    await withTimeout(ctx.close().catch(() => {}), 5000, null);
+    return { error: `login as the ${auth.credentialsFile} user failed (${r.error || "stayed on " + loginPath}) — auth routes cannot be verified` };
+  }
+  return { ctx };
+}
+
 export async function verify(cfg) {
   const web = (cfg.runtime && cfg.runtime.web) || {};
   const BASE = process.env.BASE_URL || web.baseUrl || "http://localhost:3000";
@@ -107,16 +240,33 @@ export async function verify(cfg) {
     return { verdict: "SETUP", overall: "SETUP", detail: { error: `could not launch browser (channel=${channel}): ${e.message}` } };
   }
 
+  // Routes marked auth: true share ONE logged-in context (cookie session persists per context).
+  // A failed/unconfigured login is SETUP, not a pass — an anon context would notFound() those
+  // routes and the declared interactions would silently never fire.
+  let authCtx = null;
+  if (routes.some((r) => r.auth)) {
+    if (!web.auth || !web.auth.credentialsFile) {
+      await withTimeout(browser.close().catch(() => {}), 5000, null);
+      return { verdict: "SETUP", overall: "SETUP", detail: { error: "routes declare auth: true but runtime.web.auth.credentialsFile is not configured" } };
+    }
+    const r = await login(browser, web.auth, BASE, cfg);
+    if (r.error) {
+      await withTimeout(browser.close().catch(() => {}), 5000, null);
+      return { verdict: "SETUP", overall: "SETUP", detail: { error: r.error } };
+    }
+    authCtx = r.ctx;
+  }
+
   const results = [];
   try {
     for (const route of routes) {
       const url = BASE + route.path;
-      const page = await browser.newPage();
+      const page = await (route.auth ? authCtx.newPage() : browser.newPage());
       const errs = [];
       page.on("console", (m) => {
         if (m.type() === "error") errs.push(m.text().slice(0, 120));
       });
-      const rr = { route: route.path, stages: [] };
+      const rr = { route: route.path, authenticated: !!route.auth, stages: [] };
       try {
         const goto = await withTimeout(
           page
@@ -137,7 +287,16 @@ export async function verify(cfg) {
           } else {
             let frozen = false,
               inconclusive = false;
-            for (const it of route.interactions || []) {
+            const interactions = route.interactions || [];
+            // Same pre-hydration race as login(): a click dispatched before the framework
+            // attaches handlers "succeeds" while driving nothing, so the canary would silently
+            // verify less than the config declares. Bounded and best-effort — on timeout we fall
+            // through to the click, whose own error handling stays authoritative.
+            if (interactions.length > 0) {
+              const first = interactions[0];
+              await waitForHydration(page, page.getByRole(first.role, { name: first.name }), HYDRATION_MS);
+            }
+            for (const it of interactions) {
               const act = await withTimeout(
                 page
                   .getByRole(it.role, { name: it.name })
@@ -175,6 +334,7 @@ export async function verify(cfg) {
       results.push(rr);
     }
   } finally {
+    if (authCtx) await withTimeout(authCtx.close().catch(() => {}), 5000, null);
     if (browser) await withTimeout(browser.close().catch(() => {}), 5000, null);
   }
 

@@ -67,8 +67,11 @@ surface on your stack (web pages, route handlers, endpoints).
 - **`web`** (`web.mjs`) — loads each `runtime.web.routes[]` entry, probes the main thread with an
   animation-frame + timer canary, drives each declared interaction (`getByRole(role, {name})`),
   and **re-probes after every action** to distinguish a real freeze (page unresponsive) from
-  Playwright flakiness (action failed but page still responsive). Requires `playwright-core` +
-  a Chrome channel. Runnable standalone: `node verifiers/web.mjs`.
+  Playwright flakiness (action failed but page still responsive). Routes behind a session (RLS,
+  auth guards) set `auth: true` and share one context logged in via `runtime.web.auth` — the
+  credentials stay in a gitignored `credentialsFile`, and a failed login is `SETUP`, never a
+  silent load-only pass. Requires `playwright-core` + a Chrome channel. Runnable standalone:
+  `node verifiers/web.mjs`.
 - **`none`** (`none.mjs`) — returns `SKIPPED`. The gate runs static checks only.
 
 ## Writing an `api` verifier (sketch)

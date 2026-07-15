@@ -157,7 +157,7 @@ npx github:<you>/agent-workflow-harness     # or: agent-workflow-harness  /  awh
 
 ```bash
 rm -rf agent-workflow-harness harness.config.json
-rm -rf .claude/skills/{plan-work-item,work-item,orchestrate,run-phase,drive-build,phase-qa}
+rm -rf .claude/skills/{plan-work-item,work-item,orchestrate,run-phase,drive-build,phase-qa,polish-qa}
 rm -f  .claude/agents/{work-item-executor,phase-qa,phase-qa-verify}.md
 rm -f  .claude/workflows/execute-phase.js
 # then remove the PostToolUse lint/format hook entry from .claude/settings.json by hand

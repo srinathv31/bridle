@@ -59,6 +59,7 @@ function vendor(target) {
 function installClaude(target) {
   const claudeSrc = join(SELF, "claude");
   const dest = join(target, ".claude");
+  const counts = {};
   for (const sub of ["skills", "agents", "workflows"]) {
     const src = join(claudeSrc, sub);
     if (!existsSync(src)) continue;
@@ -68,8 +69,9 @@ function installClaude(target) {
     for (const entry of readdirSync(src)) {
       cpSync(join(src, entry), join(out, entry), { recursive: true });
     }
+    counts[sub] = readdirSync(src).length;
   }
-  ok(`installed .claude/skills (7), .claude/agents (3), .claude/workflows/execute-phase.js`);
+  ok(`installed .claude/skills (${counts.skills}), .claude/agents (${counts.agents}), .claude/workflows/execute-phase.js`);
 }
 
 // ── 3. merge hooks into .claude/settings.json ────────────────────────────────

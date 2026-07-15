@@ -113,6 +113,37 @@
           "properties": {
             "baseUrl": { "type": "string", "default": "http://localhost:3000" },
             "browserChannel": { "type": "string", "default": "chrome" },
+            "auth": {
+              "type": "object",
+              "description": "Login step for routes marked auth: true. The verifier logs in ONCE per run and reuses the session context. Credentials are read at runtime from a gitignored file — never put them in this config.",
+              "properties": {
+                "credentialsFile": {
+                  "type": "string",
+                  "description": "Project-root-relative path to a GITIGNORED file holding the test user. Accepted formats: JSON { email, password }, markdown \"**Email:** `x`\" lines, or plain \"email: x\" / \"EMAIL=x\" lines."
+                },
+                "loginPath": { "type": "string", "default": "/login" },
+                "emailLabel": {
+                  "type": "string",
+                  "description": "Accessible label of the email field (getByLabel)",
+                  "default": "Email"
+                },
+                "passwordLabel": {
+                  "type": "string",
+                  "description": "Accessible label of the password field (getByLabel)",
+                  "default": "Password"
+                },
+                "submit": {
+                  "type": "object",
+                  "description": "Submit control locator; default { role: \"button\", name: \"Sign in\" }.",
+                  "properties": {
+                    "role": { "type": "string" },
+                    "name": { "type": "string" }
+                  },
+                  "required": ["role", "name"]
+                }
+              },
+              "required": ["credentialsFile"]
+            },
             "routes": {
               "type": "array",
               "description": "Each route the gate loads and drives. The gate only catches a freeze on an interaction it actually drives.",
@@ -120,6 +151,11 @@
                 "type": "object",
                 "properties": {
                   "path": { "type": "string" },
+                  "auth": {
+                    "type": "boolean",
+                    "description": "Load this route in the logged-in context from runtime.web.auth (for session/RLS-gated pages that 404 or render empty for anon). Login failure is SETUP, not a pass.",
+                    "default": false
+                  },
                   "interactions": {
                     "type": "array",
                     "items": {

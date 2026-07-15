@@ -1,18 +1,20 @@
 ---
 name: phase-qa
-description: Validate a completed redesign phase end-to-end and produce a structured defect list for the orchestrator. Operates in two modes — thorough (first pass, full battery) and verify (subsequent passes, targeted verification of prior defects + light smoke). Auto-detects mode by checking for existing pass files. Use when an AI agent is assigned a phase ID (e.g. P0, P2, P3) after every parallel work-item in that phase has been marked complete. This skill is read-only — it does not modify production code.
+description: Validate a completed redesign phase as a FUNCTIONAL GATE — "is this feature broken, or does it break something else?" — and produce a structured defect list for the orchestrator. Operates in two modes — thorough (first pass, functional-gate battery) and verify (subsequent passes, targeted verification of prior defects + light smoke). Auto-detects mode by checking for existing pass files. Exhaustive edge-case probing and detailed design diff are NOT this skill's job — that is the polish-qa skill, run per-milestone. Use when an AI agent is assigned a phase ID (e.g. P0, P2, P3) after every parallel work-item in that phase has been marked complete. This skill is read-only — it does not modify production code.
 ---
 
 # Phase-qa workflow
 
-This skill validates a completed phase end-to-end and produces a structured defect list. **This skill does not modify production code.** It reads, runs the app, observes, and reports.
+This skill validates a completed phase and produces a structured defect list. **This skill does not modify production code.** It reads, runs the app, observes, and reports.
+
+**This is a functional gate, not a polish pass.** The question it answers between phases is: _is this feature broken, or does it break something else?_ Exhaustive per-criterion validation, edge-case states, and detailed pixel-level design diff belong to the `polish-qa` skill, run once per milestone — not between every phase. A between-phase pass that hunts cosmetic drift burns the token/wall-clock budget that multi-phase autonomous runs (drive-build) need for building.
 
 The skill operates in two modes:
 
-- **Thorough mode** — first QA pass on a phase. Full battery: static checks (typecheck + build), the runtime verifier, runtime checks of every acceptance criterion, integration seam probes for every contract, visual diff against the design source.
+- **Thorough mode** — first QA pass on a phase. Functional-gate battery: static checks (typecheck + build), the runtime verifier, a happy-path walkthrough of each work-item's primary flow (opening every NEW interactive control once), happy-path integration seam checks, an obvious-breakage visual check, and a smoke pass of pre-existing surfaces the phase touched.
 - **Verify mode** — second or later pass on a phase, after fixes have been applied. Targeted: the runtime verifier, verifies the specific defects from the prior pass at source and runtime, runs typecheck + build, takes a smoke screenshot of each major touched surface, watches for regressions on touched surfaces only.
 
-Verify mode exists because re-running the full battery after a fix-pass is mostly redundant — contract surfaces haven't changed, architectural rules don't get re-violated by a fix, and most prior acceptance criteria don't need re-verification. The cost saving is ~50% per pass while preserving the most important guard: that previously-flagged defects actually got fixed and didn't regress nearby surfaces.
+Verify mode exists because re-running even the functional-gate battery after a fix-pass is mostly redundant — contract surfaces haven't changed, architectural rules don't get re-violated by a fix, and most prior acceptance criteria don't need re-verification. The cost saving is ~50% per pass while preserving the most important guard: that previously-flagged defects actually got fixed and didn't regress nearby surfaces.
 
 **The runtime verifier runs in BOTH modes and is never skipped.** It is cheap (~25s for a handful of routes with the `web` verifier) and catches a failure class — frozen/unresponsive pages — that no other leg sees. "Trust the prior pass" applies to contracts and architectural rules, never to the runtime verifier: a fix-pass can freeze a page that was live before.
 
@@ -56,13 +58,14 @@ Decide mode before doing anything else — every step below branches on it.
 
 Read each work-item brief at `<planDir>/work-item-<id>.md`. Extract:
 
-- All runtime acceptance criteria
-- The reference design source URL or file the brief points at — load it now so you can visually compare later
-- Any explicit out-of-scope notes
+- The item's **primary user flow** — the one end-to-end path that proves the feature works (e.g. "open the editor, switch tabs, edit a field, save, confirm persistence"). Individual acceptance criteria inform what the flow should look like; you are not building a per-criterion test matrix — that's polish-qa.
+- The NEW interactive controls the item introduces (dialogs, comboboxes, popovers, pickers) — each gets opened once during the walkthrough.
+- The pre-existing routes/surfaces the item's files touch — these get a does-it-still-work smoke check.
+- Any explicit out-of-scope notes.
 
-Read `<planDir>/contracts.md` and identify every contract produced or consumed within this phase. These are the integration seams.
+Read `<planDir>/contracts.md` and identify every contract produced or consumed within this phase. These are the integration seams — plan one happy-path producer→consumer check per seam.
 
-Write a short plan listing static checks, runtime criteria grouped by work-item, integration seams to probe, and screens that need visual diff.
+Write a short plan listing static checks, the primary flow per work-item, new controls to open, seams to probe (happy path), and pre-existing surfaces to smoke.
 
 ### Verify mode plan
 
@@ -72,7 +75,7 @@ Read the most recent prior pass file (`phase-<id>-qa.md` for pass 2, or the high
 - The files each defect's fix likely touched, derived from the defect's `Likely originating work-item(s)` and `Notes` fields
 - The major surfaces those files render — these get a smoke screenshot
 
-**Skip:** full integration seam probing, full battery runtime acceptance criteria, exhaustive visual diff. The thorough pass already validated those; nothing in a normal fix-pass invalidates them. If a fix did break something at the contract or rule level, the smoke pass will surface it.
+**Skip:** integration seam probing, primary-flow walkthroughs, the obvious-breakage visual check. The thorough pass already ran the functional gate; nothing in a normal fix-pass invalidates it. If a fix did break something at the contract or rule level, the smoke pass will surface it.
 
 Write a short plan listing the defects to verify and the smoke screenshots to capture.
 
@@ -114,13 +117,17 @@ Start the app (the configured dev command — `harness.config.json` → `runner.
 
 ### Thorough mode
 
-For every runtime acceptance criterion across every work-item in the phase:
+For each work-item in the phase, drive its **primary flow** end-to-end (from your §2 plan):
 
 1. Navigate to the relevant route
-2. Drive the interaction the criterion describes — **actually open every interactive control (combobox, filter, dialog, dropdown, date-picker), don't just confirm it's present.** A rendered-but-frozen control passes a presence check and fails a real user. The worst failures hide behind the first click.
-3. Screenshot to `<planDir>/phase-<id>-qa-screenshots/<descriptive-filename>.png`
-4. Verify rendered state matches what the criterion specifies
-5. Record pass/fail per criterion, with the screenshot path as evidence
+2. Drive the flow, and **actually open every NEW interactive control the item introduced (combobox, filter, dialog, dropdown, date-picker) once — don't just confirm it's present.** A rendered-but-frozen control passes a presence check and fails a real user. The worst failures hide behind the first click.
+3. Screenshot the flow's end state (and any step where something looks wrong) to `<planDir>/phase-<id>-qa-screenshots/<descriptive-filename>.png`
+4. Verify the flow's outcome matches the brief — the feature does what it exists to do (data persists, navigation lands, state updates)
+5. Record pass/fail per flow, with the screenshot path as evidence
+
+Then smoke the **pre-existing surfaces** the phase's files touch: load each, confirm it still renders and its primary interaction still responds. "Breaks something else" is half the gate.
+
+Do NOT walk every acceptance criterion individually, and do not probe edge-case inputs — a criterion is only exercised here if the primary flow or a new control naturally crosses it. The exhaustive per-criterion matrix is polish-qa's job.
 
 **DOM rendered ≠ page works.** If a Playwright action hangs or times out, that is a candidate liveness defect — re-run the runtime verifier (§3b) on that route to disambiguate app-freeze from tooling. Never attribute a hang to tooling without that positive control, and never proxy runtime validation through a code-shape check or a `curl` 200 (a server-side 200 cannot detect a client-side freeze).
 
@@ -143,20 +150,23 @@ Screenshots go to `<planDir>/phase-<id>-qa-pass<N>-screenshots/`.
 
 **Skipped in verify mode.**
 
-For each contract in the phase, exercise the producer/consumer path end-to-end:
+For each contract in the phase, exercise the producer/consumer path end-to-end — **happy path only**:
 
 - Trigger the producer (load the page, fire the action, mount the component that produces the contract surface)
 - Verify the consumer receives data in the shape `contracts.md` specifies
 - Verify the consumer renders correctly with that data
-- Probe edge cases: empty state, loading state, error state, large-data state
+
+Do NOT probe edge-case states here (empty, loading, error, large-data) — those are polish-qa's job. The between-phase question is whether the seam works at all, not whether it degrades gracefully.
 
 Bugs at this step are the highest-priority class of defect — they're the integration failures individual work-items couldn't see.
 
-## 6. Visual diff vs design source
+## 6. Obvious-breakage visual check
 
 ### Thorough mode
 
-For every screen the phase touches, compare your Playwright screenshot side-by-side with the design source. Look for spacing, typography, color, missing interaction states, responsive behavior drift.
+For every screen the phase touches, glance at your Playwright screenshot against the design source for **obvious breakage only**: broken layout, missing sections, unreadable/overlapping content, a component that plainly failed to render. This is a "did the screen come out structurally right" check, not a fidelity audit.
+
+Do NOT hunt spacing/typography/color drift, missing interaction states, or responsive behavior — that detailed diff is polish-qa's job. Logging cosmetic drift here at blocking severity is how a functional gate turns into an hour-long polish pass.
 
 ### Verify mode — smoke pass
 
@@ -168,7 +178,7 @@ If you spot a new defect during the smoke pass, flag it. **New defects discovere
 
 ### Critical and major defect format (full detail)
 
-For phase-blocking issues and spec mismatches — static-check failures, broken integration seams, runtime criteria that fail entirely, visual drift, partial criterion failures, missing interaction states:
+For phase-blocking issues and functional spec mismatches — static-check failures, broken integration seams, primary flows that fail, features that do the wrong thing:
 
 ```
 ## D<n> — <one-line summary>
@@ -208,11 +218,11 @@ No separate sections, no screenshot unless the visual is the only viable way to 
 
 ### Severity guidance
 
-- **Critical** — phase doesn't work. Liveness failures (a route freezes on interaction), static-check failures, broken integration seams, runtime criteria that fail entirely. The phase cannot ship in this state.
-- **Major** — phase works but doesn't match spec. Visual drift, partial criterion failures, missing interaction states. The phase functions but is wrong.
-- **Minor** — cosmetic or edge-case. The phase could ship without this fix.
+- **Critical** — phase doesn't work. Liveness failures (a route freezes on interaction), static-check failures, broken integration seams, a primary flow that fails entirely. The phase cannot ship in this state.
+- **Major** — phase runs but does the wrong thing **functionally**: saves the wrong data, navigates to the wrong place, shows the wrong record, a regression on a pre-existing surface. The feature is misbehaving, not just mis-styled.
+- **Minor** — cosmetic or edge-case: visual drift, spacing/typography/color mismatch, a missing hover/empty/error state, edge-case input handling. The phase ships without this fix; polish-qa owns hunting and fixing this class per-milestone.
 
-The merge barrier blocks on `harness.config.json` → `gate.blockOn` (default `["critical","major"]`) — so a **MAJOR** defect blocks advancement, not only critical. Classify accordingly: don't park a real spec mismatch as minor to slip it past the barrier. The flip side of the same discipline: if everything is critical, nothing is. Reserve critical for actual blockers.
+The merge barrier blocks on `harness.config.json` → `gate.blockOn` (default `["critical","major"]`) — so a **MAJOR** defect blocks advancement, not only critical. Classify by function, not by spec-letter: don't park a real functional mismatch as minor to slip it past the barrier, and don't promote cosmetic drift to major just because the design source disagrees — a barrier that blocks on cosmetics stalls autonomous multi-phase runs on non-defects. If everything is critical, nothing is. Reserve critical for actual blockers.
 
 ### Output file structure
 
@@ -290,4 +300,5 @@ If your defect list is empty, say so explicitly — the orchestrator needs that 
 - Fixing defects — that's `work-item-executor` running on a defect-derived inline brief, kicked off by the orchestrator.
 - Re-planning the phase — if QA reveals the original plan was wrong, that's `plan-work-item` in a scoped re-plan, kicked off by the user.
 - Cross-phase regression testing — `phase-qa` validates only the phase it's invoked on. Cross-phase regression is a separate invocation against the full integrated app.
+- Polish QA — exhaustive per-criterion validation, edge-case seam states (empty/loading/error/large-data), detailed visual diff vs the design source, responsive drift. That's the `polish-qa` skill, run per-milestone across the phases shipped since the last polish pass.
 - Writing or modifying any production code — this skill is read-only by design.

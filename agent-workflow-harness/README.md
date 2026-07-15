@@ -55,7 +55,7 @@ agent-workflow-harness/          # this repo — clone once, reuse everywhere
   roles/README.md                # the guide an AI agent reads to find its role + the disciplines
   templates/                     # work-phases / contracts / work-item skeletons the planner fills in
   claude/                        # the Claude Code binding pack → installed into <target>/.claude/
-    skills/  (init-harness · plan-work-item · work-item · orchestrate · run-phase · drive-build · phase-qa)
+    skills/  (init-harness · plan-work-item · work-item · orchestrate · run-phase · drive-build · phase-qa · polish-qa)
     agents/  (work-item-executor · phase-qa · phase-qa-verify)
     workflows/execute-phase.js   # the deterministic per-phase engine
     settings.hooks.json          # the PostToolUse hook snippet merged into settings.json

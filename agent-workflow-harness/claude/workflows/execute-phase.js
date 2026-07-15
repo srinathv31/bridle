@@ -11,7 +11,7 @@ export const meta = {
     {
       title: "Build",
       detail:
-        "one executor per item; parallel iff disjoint file sets, else serialized",
+        "parallel executors iff disjoint file sets; chained items collapse into ONE executor",
     },
     {
       title: "Gate",
@@ -20,7 +20,8 @@ export const meta = {
     },
     {
       title: "QA",
-      detail: "phase-qa in a separate agent + qa-check, bounded fix rounds",
+      detail:
+        "round 1: phase-qa functional gate; rounds 2+: phase-qa-verify (targeted, Sonnet); qa-check every round",
     },
     { title: "Guard", detail: "phase-guard is the merge barrier" },
   ],
@@ -82,6 +83,13 @@ const BUILD = {
   },
 };
 
+// A chained (non-parallelizable) phase returns one entry per item from a single executor.
+const BUILD_CHAIN = {
+  type: "object",
+  required: ["items"],
+  properties: { items: { type: "array", items: BUILD } },
+};
+
 const GATE = {
   type: "object",
   required: ["pass", "failures"],
@@ -140,7 +148,14 @@ const GUARD = {
 phase("Read plan");
 const plan = await agent(
   `Run \`node ${HARNESS}/scripts/phase-items.mjs ${PHASE}\` and return its JSON output verbatim — it is a deterministic parser of the plan (item list, file sets, isUI, and an overlap-computed "parallelizable"). Do NOT reinterpret or change any value. If it exits non-zero, surface the error.`,
-  { schema: PLAN, label: `read-plan:${PHASE}`, phase: "Read plan" },
+  {
+    schema: PLAN,
+    label: `read-plan:${PHASE}`,
+    phase: "Read plan",
+    // pure script wrapper — runs one deterministic command and relays JSON
+    model: "haiku",
+    effort: "low",
+  },
 );
 
 const open = plan.items.filter((i) => !i.done);
@@ -165,10 +180,31 @@ Do STATIC self-checks only — run \`node ${HARNESS}/scripts/run-gate.mjs --no-r
   );
 }
 
-// parallel ONLY when phase-items proved the open file sets disjoint; otherwise serialize.
+// One executor for the whole chain when items can't run in parallel: N sequential
+// executors each pay full context spin-up (briefs, contracts, design source) and re-read
+// files the previous agent just wrote — measured at ~150k redundant tokens on a 3-item phase.
+async function buildChain(items) {
+  const ids = items.map((i) => i.id);
+  const chain = await agent(
+    `Implement work-items ${ids.join(", ")} of phase ${PHASE} — all of them, one at a time, in exactly that order (it is a dependency chain). For EACH item in turn: follow the work-item skill and its brief (default path docs/redesign/work-item-<id>.md; honor harness.config.json → planDir if customized), read the brief end-to-end plus everything in its "Inputs to read" block, match contracts.md verbatim, and stay strictly inside its "Files this item creates / edits" list and "Out of scope" bullets. Maintain a heartbeat PER ITEM at the status dir (harness.config.json → statusDir, default docs/redesign/.status/<id>.json): state running→done, bump lastBeat/step, keep criteriaDone/filesTouched current. Read shared inputs (contracts.md, design source) ONCE — do not re-read them per item.
+After each item, run the configured typecheck (harness.config.json → runner.typecheck); after the FINAL item, run \`node ${HARNESS}/scripts/run-gate.mjs --no-runtime\` once (configured lint + typecheck + test, no runtime verifier). Do NOT start a dev server or run the runtime verifier yourself — all runtime verification happens once at the phase gate. If a brief is ambiguous, mark that item "blocked" with a note, do not guess, and do NOT attempt items that depend on it — mark those "blocked" too. Return one entry per assigned item.`,
+    {
+      agentType: "work-item-executor",
+      schema: BUILD_CHAIN,
+      label: `build:${ids.join("+")}`,
+      phase: "Build",
+    },
+  );
+  return (chain && chain.items) || [];
+}
+
+// parallel ONLY when phase-items proved the open file sets disjoint; otherwise ONE
+// executor builds the whole chain in dependency order.
 let built;
 if (plan.parallelizable) {
   built = (await parallel(open.map((it) => () => build(it)))).filter(Boolean);
+} else if (open.length > 1) {
+  built = await buildChain(open);
 } else {
   built = [];
   for (const it of open) built.push(await build(it));
@@ -201,7 +237,15 @@ const fileMap = open.map((i) => `${i.id}:[${i.files.join(", ")}]`).join(" ; ");
 async function runGate() {
   return agent(
     `Run the whole-repo detector gate for ${PHASE}: \`node ${HARNESS}/scripts/run-gate.mjs\`. ${anyUI ? "First ensure the app is up: start the configured dev command (harness.config.json → runner.dev) in the background and wait until it responds (runtime.web.baseUrl) before the gate runs the runtime verifier. " : "This phase has no UI items; you may pass --no-runtime. "}run-gate runs the configured lint/typecheck/test verbs PLUS the runtime verifier (harness.config.json → runtime.verifier) and prints a JSON verdict {pass, failures}. A failing runtime verifier (e.g. a web FROZEN verdict) is a CRITICAL defect — never excuse it as a tooling limitation. You are a DETECTOR, not a builder — do not edit production code. Return pass=true only if run-gate exited 0; otherwise list each failure with its exit code, the offending file path if known, and a short excerpt.`,
-    { schema: GATE, label: `gate:${PHASE}`, phase: "Gate" },
+    {
+      schema: GATE,
+      label: `gate:${PHASE}`,
+      phase: "Gate",
+      // mechanical detector (start server, run script, relay verdict) — but it manages a
+      // background dev server, so keep medium effort rather than low
+      model: "haiku",
+      effort: "medium",
+    },
   );
 }
 
@@ -244,12 +288,25 @@ if (!gate.pass) {
 phase("QA");
 let qa;
 let qaRound = 0;
+let lastBlockers = [];
 while (true) {
   qaRound++;
+  const thorough = qaRound === 1;
+  // Round 1: phase-qa (Opus) runs the functional-gate battery. Rounds 2+: phase-qa-verify
+  // (Sonnet) does a targeted fix-verification — re-running the full battery to check one
+  // fix was measured at ~14min/143k tokens vs ~4min targeted.
+  const fixedList = lastBlockers
+    .map(
+      (d) =>
+        `${d.id ? d.id + " " : ""}"${d.title}"${d.location ? ` (${d.location})` : ""}`,
+    )
+    .join("; ");
   qa = await agent(
-    `Run phase QA for ${PHASE} using the phase-qa skill (auto-detect thorough vs verify by checking for an existing phase-${PHASE}-qa*.md in the plan dir). READ-ONLY on production code. Run the full battery INCLUDING the runtime verifier (never skipped); a failing verifier verdict is a CRITICAL defect and is never downgraded to a tooling quirk. Write phase-${PHASE}-qa.md (in harness.config.json → planDir, default docs/redesign/) with every claim citing ground truth (path:line, real command output, or a screenshot that exists). Before returning, run \`node ${HARNESS}/scripts/qa-check.mjs <that report>\` and fix the report until it exits 0; report qaCheckPass accordingly.`,
+    thorough
+      ? `Run phase QA for ${PHASE} using the phase-qa skill in thorough mode (this is pass 1 — no phase-${PHASE}-qa*.md should exist yet). READ-ONLY on production code. This is a FUNCTIONAL GATE, not a polish pass: run the skill's functional-gate battery INCLUDING the runtime verifier (never skipped); a failing verifier verdict is a CRITICAL defect and is never downgraded to a tooling quirk. Exhaustive edge-case probing and detailed design diff belong to the separate polish-qa skill — do not do them here. Write phase-${PHASE}-qa.md (in harness.config.json → planDir, default docs/redesign/) with every claim citing ground truth (path:line, real command output, or a screenshot that exists). Before returning, run \`node ${HARNESS}/scripts/qa-check.mjs <that report>\` and fix the report until it exits 0; report qaCheckPass accordingly.`
+      : `Run verify-mode phase QA for ${PHASE} using the phase-qa skill (a prior phase-${PHASE}-qa*.md exists). READ-ONLY on production code. This is a TARGETED pass, not the full battery: (1) run the runtime verifier (never skipped; FROZEN/FAIL = CRITICAL), (2) verify each just-fixed defect at source and runtime — this round's fixes: ${fixedList || "see the prior pass file's open defects"}, (3) static typecheck+build, (4) one smoke screenshot per touched surface. Write the pass file per the skill (phase-${PHASE}-qa-pass<N>.md) AND annotate the base phase-${PHASE}-qa.md — mark each verified-fixed defect RESOLVED with fix evidence and update its counts line, since phase-guard gates on that base file. Run \`node ${HARNESS}/scripts/qa-check.mjs\` on both files until each exits 0; report qaCheckPass accordingly. In your returned defects array, list ONLY defects still open (still-broken priors + new finds) — do not re-list resolved ones.`,
     {
-      agentType: "phase-qa",
+      agentType: thorough ? "phase-qa" : "phase-qa-verify",
       schema: QA,
       label: `phase-qa:${PHASE}#${qaRound}`,
       phase: "QA",
@@ -278,6 +335,7 @@ while (true) {
   }
 
   if (blockers.length) {
+    lastBlockers = blockers;
     log(
       `${PHASE}: QA round ${qaRound} found ${blockers.length} blocking defect(s) (${BLOCK_SEVERITIES.join("/")}) — dispatching fixes, then re-QA (verify).`,
     );
@@ -295,14 +353,21 @@ while (true) {
       ),
     );
   }
-  // loop: re-run phase-qa (auto-detects verify mode)
+  // loop: next round dispatches phase-qa-verify (targeted) against the fixes above
 }
 
 // ─── stage 5: phase-guard — the merge barrier (the definition of "done") ──────
 phase("Guard");
 const guard = await agent(
   `Run \`node ${HARNESS}/scripts/phase-guard.mjs ${PHASE}\`. Report its exit code and output verbatim. Do not edit anything. guarded=true only if it exits 0 (every item [x] AND a phase-${PHASE}-qa.md that itself passes qa-check).`,
-  { schema: GUARD, label: `phase-guard:${PHASE}`, phase: "Guard" },
+  {
+    schema: GUARD,
+    label: `phase-guard:${PHASE}`,
+    phase: "Guard",
+    // pure script wrapper — runs one deterministic command and relays exit/output
+    model: "haiku",
+    effort: "low",
+  },
 );
 
 log(
