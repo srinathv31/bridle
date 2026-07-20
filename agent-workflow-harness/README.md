@@ -42,7 +42,7 @@ agent-workflow-harness/          # this repo — clone once, reuse everywhere
     config.mjs                   # resolves the manifest; turns app-agnostic scripts into yours
     hook-runner.mjs              # stack-agnostic engine behind the lint/format hooks
   scripts/                       # the portable trust layer — plain Node, exit code is the contract
-    phase-items.mjs              # deterministic plan reader; parallel-safety from REAL file overlap
+    phase-items.mjs              # deterministic plan reader; dep-chain groups + parallel-safety from REAL file overlap
     precheck.mjs                 # refuses an illegal dispatch before spawning an agent
     run-gate.mjs                 # whole-repo gate: runner verbs + the runtime verifier, one verdict
     qa-check.mjs                 # greps a QA report's claims against ground truth
@@ -157,7 +157,7 @@ Automate on the exit code; don't parse prose. Run them as `node agent-workflow-h
 
 | Script              | What it checks                                                                                       | Exit codes                               |
 | ------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `phase-items <Pid>` | the phase's items, file sets, `isUI`, and `parallelizable` computed from **real file-set overlap**   | `0` parsed · `2` setup                   |
+| `phase-items <Pid>` | the phase's items, file sets, `isUI`, dep-chain dispatch `groups`, and `parallelizable` from **real file-set overlap**   | `0` parsed · `2` setup                   |
 | `precheck <id>`     | refuses an illegal dispatch: missing brief, item already `[x]`, unmet deps, unguarded upstream phase | `0` safe · `1` blocked · `2` setup       |
 | `run-gate`          | runs `runner.{lint,typecheck,test}` (+`--build`) and the runtime verifier; one structured verdict    | `0` pass · `1` fail · `2` verifier setup |
 | `qa-check <report>` | cited screenshots/`path:line` resolve; file-attributed quotes actually appear in the file            | `0` clean · `1` violation · `2` usage    |

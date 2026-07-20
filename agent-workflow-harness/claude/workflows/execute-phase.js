@@ -1,7 +1,7 @@
 export const meta = {
   name: "execute-phase",
   description:
-    "Build one phase end-to-end: read the phase plan deterministically (phase-items.mjs), dispatch work-item executors (parallel only when file sets are genuinely disjoint), run the whole-repo detector gate ONCE (run-gate.mjs: configured lint/typecheck/test + the runtime verifier) against a single dev server, QA in a SEPARATE agent (+ qa-check), then verify phase-guard. Returns a structured verdict and never advances to the next phase — the merge barrier is the caller's decision. Args: 'P2' or { phase, attempt, answers } — a blocked build surfaces the executors' questions in the verdict, and the conductor's answers re-enter the still-open items' prompts on the next attempt. App-agnostic: all stack verbs/paths come from harness.config.json.",
+    "Build one phase end-to-end: read the phase plan deterministically (phase-items.mjs), dispatch work-item executors (parallel only when file sets are genuinely disjoint; a dependency chain collapses into ONE sequential executor), run the whole-repo detector gate ONCE (run-gate.mjs: configured lint/typecheck/test + the runtime verifier) against a single dev server, QA in a SEPARATE agent (+ qa-check), then verify phase-guard. Returns a structured verdict and never advances to the next phase — the merge barrier is the caller's decision. Args: 'P2' or { phase, attempt, answers } — a blocked build surfaces the executors' questions in the verdict, and the conductor's answers re-enter the still-open items' prompts on the next attempt. App-agnostic: all stack verbs/paths come from harness.config.json.",
   phases: [
     {
       title: "Read plan",
@@ -45,7 +45,23 @@ const BLOCK_SEVERITIES = ["critical", "major"];
 // injected into the still-open items' prompts so the same ambiguity cannot block twice.
 // (resumeFromRunId stays reserved for the conductor's stuck-kill recovery, where prompts
 // are byte-identical and the cached prefix replays.)
-const A = typeof args === "string" ? { phase: args } : args || {};
+// Named-workflow invocations can deliver args as a JSON-ENCODED STRING — parse before
+// validating, or the { phase, attempt, answers } relaunch path above can never work. A bare
+// "P2"-style string stays the phase-id shorthand; a malformed "{…" string falls through to
+// the phase-id error below, which echoes the raw args.
+let A = args || {};
+if (typeof A === "string") {
+  const s = A.trim();
+  if (s.startsWith("{")) {
+    try {
+      A = JSON.parse(s);
+    } catch {
+      A = {};
+    }
+  } else {
+    A = { phase: A };
+  }
+}
 const PHASE = (A.phase || "").toUpperCase();
 const ATTEMPT = Math.max(1, Number(A.attempt) || 1);
 const ANSWERS = A.answers && typeof A.answers === "object" ? A.answers : {};
@@ -75,6 +91,9 @@ const PLAN = {
     phase: { type: "string" },
     mode: { type: "string" },
     parallelizable: { type: "boolean" },
+    // dependency-collapsed dispatch groups over the OPEN items: each inner array is one
+    // executor's assignment, topologically ordered (a multi-item group is a chain)
+    groups: { type: "array", items: { type: "array", items: { type: "string" } } },
     items: {
       type: "array",
       items: {
@@ -106,7 +125,7 @@ const BUILD = {
   },
 };
 
-// A chained (non-parallelizable) phase returns one entry per item from a single executor.
+// A dependency chain (one dispatch group) returns one entry per item from a single executor.
 const BUILD_CHAIN = {
   type: "object",
   required: ["items"],
@@ -170,7 +189,7 @@ const GUARD = {
 // ─── stage 1: read the plan deterministically ────────────────────────────────
 phase("Read plan");
 const plan = await agent(
-  `Run \`node ${HARNESS}/scripts/phase-items.mjs ${PHASE}\` and return its JSON output verbatim — it is a deterministic parser of the plan (item list, file sets, isUI, and an overlap-computed "parallelizable"). Do NOT reinterpret or change any value. If it exits non-zero, surface the error.${ATTEMPT_TAG}`,
+  `Run \`node ${HARNESS}/scripts/phase-items.mjs ${PHASE}\` and return its JSON output verbatim — it is a deterministic parser of the plan (item list, file sets, isUI, dependency-collapsed dispatch "groups", and an overlap-computed "parallelizable"). Do NOT reinterpret or change any value. If it exits non-zero, surface the error.${ATTEMPT_TAG}`,
   {
     schema: PLAN,
     label: `read-plan:${PHASE}`,
@@ -182,10 +201,19 @@ const plan = await agent(
 );
 
 const open = plan.items.filter((i) => !i.done);
+// Dependency-collapsed dispatch groups (id arrays → item arrays, topological order kept).
+// A multi-item group is a chain ONE executor builds in order — dispatching its members as
+// parallel siblings would race a dependent against its prerequisite. Fallback for a plan
+// without `groups` (older phase-items): every open item is its own group.
+const groups = (
+  plan.groups && plan.groups.length ? plan.groups : open.map((i) => [i.id])
+)
+  .map((g) => g.map((id) => open.find((i) => i.id === id)).filter(Boolean))
+  .filter((g) => g.length);
 if (plan.warnings && plan.warnings.length)
   log(`${PHASE} plan warnings: ${plan.warnings.join(" · ")}`);
 log(
-  `${PHASE}: mode=${plan.mode} · parallelizable=${plan.parallelizable} · ${open.length} open: ${open.map((i) => i.id).join(", ") || "none"}`,
+  `${PHASE}: mode=${plan.mode} · parallelizable=${plan.parallelizable} · ${open.length} open: ${groups.map((g) => g.map((i) => i.id).join("→")).join(" · ") || "none"}`,
 );
 
 // ─── stage 2: build (static self-check only; no per-item server) ──────────────
@@ -225,13 +253,21 @@ After each item, run the configured typecheck (harness.config.json → runner.ty
   return (chain && chain.items) || [];
 }
 
-// parallel ONLY when phase-items proved the open file sets disjoint; otherwise ONE
-// executor builds the whole chain in dependency order.
+// parallel ONLY when phase-items proved the groups' file sets disjoint ACROSS groups —
+// then the groups run concurrently, and a multi-item group (dependency chain) still
+// serializes inside its single executor. Otherwise ONE executor builds everything in
+// dependency order.
 let built;
 if (plan.parallelizable) {
-  built = (await parallel(open.map((it) => () => build(it)))).filter(Boolean);
+  built = (
+    await parallel(
+      groups.map((g) => () => (g.length > 1 ? buildChain(g) : build(g[0]))),
+    )
+  )
+    .flat()
+    .filter(Boolean);
 } else if (open.length > 1) {
-  built = await buildChain(open);
+  built = await buildChain(groups.flat());
 } else {
   built = [];
   for (const it of open) built.push(await build(it));

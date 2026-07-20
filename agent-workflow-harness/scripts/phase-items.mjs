@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 // phase-items.mjs — deterministic plan reader for ONE phase. Emits the phase's work-items as
 // JSON: ids, done-state, declared deps, the file set each item creates/edits, a computed isUI
-// flag, and — crucially — whether the open items are actually parallel-safe (pairwise-disjoint
-// file sets), independent of what each brief CLAIMS.
+// flag, the dispatch `groups` (dependency chains collapsed, see below), and — crucially —
+// whether those groups are actually parallel-safe (pairwise-disjoint file sets), independent
+// of what each brief CLAIMS.
 //
 // Why it exists: the dispatch decision (parallel vs serial) must be MECHANICAL, computed from
-// real file-set overlap, not from a brief's self-reported "parallel-safe" line. Two items run
-// concurrently only if their file sets genuinely do not intersect.
+// real file-set overlap and the declared dependency edges, not from a brief's self-reported
+// "parallel-safe" line. Two GROUPS run concurrently only if their file sets genuinely do not
+// intersect; open items linked by a within-phase dependency (W3.2 depends on W3.1) land in the
+// SAME group, topologically ordered, so the dispatcher hands the whole chain to one executor
+// instead of racing the dependent against its prerequisite.
 //
 // App-agnostic: all paths, the id scheme, and the "what counts as UI" rule come from
 // harness.config.json (see lib/config.mjs). Nothing here knows about pnpm, Next, or .tsx beyond
@@ -108,6 +112,69 @@ function overlaps(items) {
   return out;
 }
 
+// Kahn's algorithm in waves; checklist order within a wave keeps the result deterministic.
+// `deps` is already restricted to ids inside `comp` (a dependency edge is what put two items
+// in the same component in the first place).
+function topoSort(comp, deps, warnings) {
+  const order = [];
+  const placed = new Set();
+  while (order.length < comp.length) {
+    const ready = comp.filter(
+      (id) => !placed.has(id) && [...deps.get(id)].every((d) => placed.has(d)),
+    );
+    if (!ready.length) {
+      warnings.push(
+        `dependency cycle among ${comp.filter((id) => !placed.has(id)).join(", ")} — using checklist order`,
+      );
+      for (const id of comp) if (!placed.has(id)) order.push(id);
+      return order;
+    }
+    for (const id of ready) {
+      placed.add(id);
+      order.push(id);
+    }
+  }
+  return order;
+}
+
+// Dispatch groups over the OPEN items: connected components of the within-phase dependency
+// graph, each topologically ordered. A multi-item group is a chain the dispatcher must hand
+// to ONE executor, in this order — never race a dependent against its prerequisite. A dep on
+// a done item is satisfied (no edge); a dep outside this phase is precheck's concern.
+function computeGroups(open, warnings) {
+  const ids = new Set(open.map((i) => i.id));
+  const pos = new Map(open.map((i, n) => [i.id, n]));
+  const deps = new Map(
+    open.map((i) => [i.id, new Set((i.dependsOn || []).filter((d) => ids.has(d)))]),
+  );
+  const adj = new Map(open.map((i) => [i.id, new Set()]));
+  for (const [id, ds] of deps)
+    for (const d of ds) {
+      adj.get(id).add(d);
+      adj.get(d).add(id);
+    }
+  const seen = new Set();
+  const groups = [];
+  for (const it of open) {
+    if (seen.has(it.id)) continue;
+    const comp = [];
+    const stack = [it.id];
+    seen.add(it.id);
+    while (stack.length) {
+      const id = stack.pop();
+      comp.push(id);
+      for (const n of adj.get(id))
+        if (!seen.has(n)) {
+          seen.add(n);
+          stack.push(n);
+        }
+    }
+    comp.sort((a, b) => pos.get(a) - pos.get(b));
+    groups.push(topoSort(comp, deps, warnings));
+  }
+  return groups;
+}
+
 function main() {
   const phase = parseArg(process.argv.slice(2));
   if (!phase) fail(`pass a phase id (matching ${cfg.ids.phaseArg})`);
@@ -143,10 +210,17 @@ function main() {
   });
 
   const open = items.filter((i) => !i.done);
-  const ov = overlaps(open);
-  const parallelizable = mode === "parallel" && ov.length === 0 && open.length > 1;
+  const groups = computeGroups(open, warnings);
 
-  for (const o of ov) {
+  // Only overlap between items in DIFFERENT groups gates parallel dispatch — a shared file
+  // inside one group is harmless, the chain runs sequentially in a single executor anyway.
+  const groupOf = new Map();
+  groups.forEach((g, n) => g.forEach((id) => groupOf.set(id, n)));
+  const ov = overlaps(open);
+  const crossOv = ov.filter((o) => groupOf.get(o.a) !== groupOf.get(o.b));
+  const parallelizable = mode === "parallel" && crossOv.length === 0 && groups.length > 1;
+
+  for (const o of crossOv) {
     const a = items.find((i) => i.id === o.a);
     const b = items.find((i) => i.id === o.b);
     if (a?.parallelSafeClaim || b?.parallelSafeClaim) {
@@ -154,7 +228,7 @@ function main() {
     }
   }
 
-  console.log(JSON.stringify({ phase, mode, parallelizable, items, overlaps: ov, warnings }, null, 2));
+  console.log(JSON.stringify({ phase, mode, parallelizable, groups, items, overlaps: ov, warnings }, null, 2));
   process.exit(0);
 }
 
