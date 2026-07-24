@@ -6,3 +6,9 @@ node_modules/
 
 # OS noise
 .DS_Store
+
+# Usage/efficiency analyses of real Bridle runs. Local-only by design: this repo
+# is PUBLIC, and these reports index private Claude Code sessions — session ids
+# and titles, client project names, absolute home paths, and per-session spend.
+# Keep them on disk (and in a private repo if you want them backed up), never here.
+reports/
