@@ -155,15 +155,15 @@ node agent-workflow-harness/scripts/phase-guard.mjs         # every completed ph
 
 Automate on the exit code; don't parse prose. Run them as `node agent-workflow-harness/scripts/<name>.mjs`.
 
-| Script              | What it checks                                                                                       | Exit codes                               |
-| ------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `phase-items <Pid>` | the phase's items, file sets, `isUI`, dep-chain dispatch `groups`, and `parallelizable` from **real file-set overlap**   | `0` parsed · `2` setup                   |
-| `precheck <id>`     | refuses an illegal dispatch: missing brief, item already `[x]`, unmet deps, unguarded upstream phase | `0` safe · `1` blocked · `2` setup       |
-| `run-gate`          | runs `runner.{lint,typecheck,test}` (+`--build`) and the runtime verifier; one structured verdict    | `0` pass · `1` fail · `2` verifier setup |
-| `qa-check <report>` | cited screenshots/`path:line` resolve; file-attributed quotes actually appear in the file            | `0` clean · `1` violation · `2` usage    |
-| `phase-guard [Pid]` | a phase is done only when every item is `[x]` **and** its QA report passes `qa-check`                | `0` guarded · `1` unguarded · `2` setup  |
-| `subagent-status`   | reads `statusDir/<id>.json` heartbeats; flags a `running` agent with a stale `lastBeat` as STUCK     | `0` healthy · `1` stuck · `2` malformed  |
-| `hook-selftest`     | feeds the lint/format hooks a known-bad fixture; fails if a hook is a dead no-op                     | `0` alive · `1` dead · `2` setup         |
+| Script              | What it checks                                                                                                         | Exit codes                               |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `phase-items <Pid>` | the phase's items, file sets, `isUI`, dep-chain dispatch `groups`, and `parallelizable` from **real file-set overlap** | `0` parsed · `2` setup                   |
+| `precheck <id>`     | refuses an illegal dispatch: missing brief, item already `[x]`, unmet deps, unguarded upstream phase                   | `0` safe · `1` blocked · `2` setup       |
+| `run-gate`          | runs `runner.{lint,typecheck,test}` (+`--build`) and the runtime verifier; one structured verdict                      | `0` pass · `1` fail · `2` verifier setup |
+| `qa-check <report>` | cited screenshots/`path:line` resolve; file-attributed quotes actually appear in the file                              | `0` clean · `1` violation · `2` usage    |
+| `phase-guard [Pid]` | a phase is done only when every item is `[x]` **and** its QA report passes `qa-check`                                  | `0` guarded · `1` unguarded · `2` setup  |
+| `subagent-status`   | reads `statusDir/<id>.json` heartbeats; flags a `running` agent with a stale `lastBeat` as STUCK                       | `0` healthy · `1` stuck · `2` malformed  |
+| `hook-selftest`     | feeds the lint/format hooks a known-bad fixture; fails if a hook is a dead no-op                                       | `0` alive · `1` dead · `2` setup         |
 
 ---
 
@@ -180,6 +180,21 @@ Automate on the exit code; don't parse prose. Run them as `node agent-workflow-h
 The one concept that doesn't reduce to a string swap is **runtime truth** — "does it work when
 exercised." On web that's freeze detection; on an API it's a request/response probe; on a CLI it's
 spawn-and-assert. That's why it's a **plugin**, not a config value.
+
+### Model tiers are aliases, on purpose
+
+The Claude-edition agents declare a **tier alias** (`model: opus`, `model: sonnet`), never a full
+model ID. Two reasons: a new Opus release then needs no kit change, and the kit stays installable on
+older CLIs that can't resolve a newer full ID at all. Don't "fix" these to pinned IDs — the churn is
+the bug being avoided.
+
+The cost is real and accepted: the alias tracks the latest recommended model in its tier, so the
+model behind your QA gate can shift under a milestone on a CLI bump. If one milestone needs a frozen
+gate, pin the full ID **in the installed copy** (`.claude/agents/phase-qa.md`) after install, and
+leave the kit on the alias.
+
+The Copilot edition is the exception — its `model:` must match your model-picker name exactly, so
+those are full names and do need a bump per release.
 
 ---
 
