@@ -1,6 +1,6 @@
 ---
 name: work-item
-description: Execute a redesign work-item brief from docs/redesign/work-item-*.md. Use when an AI agent is assigned a specific work-item ID (e.g. W0.1, W2.3, W3.5) to implement. Covers reading the brief, the clarification protocol, scoped implementation, post-implementation verification including Playwright MCP for runtime checks on web apps, and marking the item complete in work-phases.md.
+description: Execute a redesign work-item brief from docs/redesign/work-item-*.md. Use when an AI agent is assigned a specific work-item ID (e.g. W0.1, W2.3, W3.5) to implement. Covers reading the brief, the clarification protocol, scoped implementation, post-implementation verification including the runtime driver for runtime checks, and marking the item complete in work-phases.md.
 ---
 
 # Work-item workflow
@@ -64,11 +64,11 @@ If a check fails, fix the underlying issue and re-run. Don't bypass with linter-
 
 **Both modes:** if you created a brand-new route, add it (and the interactions that exercise it) to `runtime.web.routes` in `harness.config.json` — the phase gate and the verifier only catch a freeze on a route they actually drive. This is the one allowed edit outside your brief's file list; mention it in your summary.
 
-### Runtime verification with Playwright MCP (standalone mode only)
+### Runtime verification with the runtime driver (standalone mode only)
 
-For any work-item with runtime acceptance criteria — anything phrased as "the dropdown opens," "the form submits," "the page renders X," "the table sorts by Y" — validate against the running app via Playwright MCP, not by inspection of the code. Code that typechecks and lints can still render wrong; runtime checks are the only thing that catches that class of bug.
+For any work-item with runtime acceptance criteria — anything phrased as "the dropdown opens," "the form submits," "the page renders X," "the table sorts by Y" — validate against the running app via the runtime driver (`harness.config.json` → `runtime.driver`, default `playwright-mcp`; how-to in `agent-workflow-harness/drivers/<driver>.md`), not by inspection of the code. Code that typechecks and lints can still render wrong; runtime checks are the only thing that catches that class of bug.
 
-Start the app (the configured dev command — `harness.config.json` → `runner.dev`) and explicitly say **"use playwright mcp"** before the first browser action in the conversation. Without that prefix, agents commonly try to drive Playwright via bash, which is slower and less reliable.
+Start the app (the configured dev command — `harness.config.json` → `runner.dev`). Before the first action, read your driver's guide and run its preflight.
 
 For each runtime acceptance criterion in the brief:
 
@@ -77,9 +77,9 @@ For each runtime acceptance criterion in the brief:
 3. Take a screenshot and verify the rendered state matches the design source referenced in the brief
 4. If the brief includes a reference JSX or template snippet, the rendered output should match it visually — not just structurally
 
-**DOM rendered ≠ page works.** Code that typechecks, lints, and renders a full DOM can still freeze the main thread on interaction. If a Playwright action hangs or times out, treat it as a candidate app-freeze, not a tooling glitch — confirm with the runtime verifier below before moving on.
+**DOM rendered ≠ page works.** Code that typechecks, lints, and renders a full DOM can still freeze the main thread on interaction. If a driver action hangs or times out, treat it as a candidate app-freeze, not a tooling glitch — confirm with the runtime verifier below before moving on.
 
-If Playwright MCP isn't configured for this project, stop and tell the user. Don't proxy the validation through a code-shape check, and don't skip it. Either the project gets MCP configured or the work-item's runtime criteria need to be downgraded by the planner — that's a call for the user, not the executor.
+If the configured driver's preflight fails, stop and report it as a blocker. Don't proxy the validation through a code-shape check, and don't skip it. Either the project gets the driver set up or the work-item's runtime criteria need to be downgraded by the planner — that's a call for the user, not the executor. With `runtime.driver: none` there is no UI driver: exercise the surface over HTTP or the CLI and say so in coverage notes. `none` is never a blocker.
 
 For backend-only or pure-utility work-items with no runtime acceptance criteria, skip this step. The brief itself tells you whether runtime checks apply.
 
@@ -96,11 +96,11 @@ Exit `0` = all routes stayed responsive; proceed. Exit `1` = a route went unresp
 
 ### Final acceptance walk-through
 
-Walk through the brief's **Acceptance criteria** checkbox-by-checkbox and confirm each one. Only flip checkboxes whose criteria you actually verified — no checking by faith. Each box you check must have a concrete artifact behind it: the command and its real output, the screenshot, or the `file:line` — not an assumption that it probably works. **Standalone mode:** for UI items, run the configured dev command and exercise the page in a browser via Playwright MCP one last time end-to-end (type checks pass ≠ feature works), and the runtime verifier must be green (exit 0) for every route this item touches before any box is checked. **Harness-dispatched:** runtime-phrased criteria are verified once at the phase gate and by phase-qa, not by you — verify statically what you can, note the runtime criteria as "deferred to gate" in your summary, and never claim runtime proof you didn't produce.
+Walk through the brief's **Acceptance criteria** checkbox-by-checkbox and confirm each one. Only flip checkboxes whose criteria you actually verified — no checking by faith. Each box you check must have a concrete artifact behind it: the command and its real output, the screenshot, or the `file:line` — not an assumption that it probably works. **Standalone mode:** for UI items, run the configured dev command and exercise the page via the runtime driver one last time end-to-end (type checks pass ≠ feature works), and the runtime verifier must be green (exit 0) for every route this item touches before any box is checked. **Harness-dispatched:** runtime-phrased criteria are verified once at the phase gate and by phase-qa, not by you — verify statically what you can, note the runtime criteria as "deferred to gate" in your summary, and never claim runtime proof you didn't produce.
 
 ## 5. Mark the work-item complete
 
-Once every acceptance criterion you own is satisfied AND your mode's checks are green (standalone: lint / typecheck / tests / Playwright runtime; harness-dispatched: the static set — the phase gate owns the rest):
+Once every acceptance criterion you own is satisfied AND your mode's checks are green (standalone: lint / typecheck / tests / runtime driver; harness-dispatched: the static set — the phase gate owns the rest):
 
 1. Open `<planDir>/work-phases.md`.
 2. In the **Progress checklist** section, find the row for this work-item ID and flip `- [ ]` to `- [x]`.

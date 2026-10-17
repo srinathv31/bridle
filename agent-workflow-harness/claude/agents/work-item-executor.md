@@ -41,7 +41,7 @@ So the orchestrator can tell "still working" from "wedged" without guessing, mai
 - Keep `criteriaDone` and `filesTouched` accurate: if you die or hang, a replacement subagent resumes from them instead of restarting. This is the resumable handoff.
 - Set `state: "done"` when every acceptance criterion is green and the checklist is ticked, or `state: "blocked"` with a `note` when you pause to ask. The orchestrator polls these via `node agent-workflow-harness/scripts/subagent-status.mjs`.
 
-For inline defect briefs (no formal work-item file), you still follow the same skill structure: read the defect, locate the affected files via the originating work-item's brief and `contracts.md`, implement the fix, run validation including Playwright MCP for any runtime defects. Skip skill steps that don't apply (e.g. there's no separate brief file to read; the inline description is the brief).
+For inline defect briefs (no formal work-item file), you still follow the same skill structure: read the defect, locate the affected files via the originating work-item's brief and `contracts.md`, implement the fix, run validation including the runtime driver (`harness.config.json` → `runtime.driver`, default `playwright-mcp`; how-to in `agent-workflow-harness/drivers/<driver>.md`) for any runtime defects. Skip skill steps that don't apply (e.g. there's no separate brief file to read; the inline description is the brief).
 
 ## Output
 

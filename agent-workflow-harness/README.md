@@ -51,6 +51,7 @@ agent-workflow-harness/          # this repo — clone once, reuse everywhere
     hook-selftest.mjs            # proves the lint/format hooks actually have teeth
   verifiers/                     # the pluggable runtime-truth layer (see verifiers/README.md)
     index.mjs · web.mjs · none.mjs
+  drivers/                       # how agents drive the app by hand: playwright-mcp · agent-browser · simctl-axe · none
   hooks/                         # lint-check.sh + format-on-write.sh (thin wrappers → hook-runner)
   roles/README.md                # the guide an AI agent reads to find its role + the disciplines
   templates/                     # work-phases / contracts / work-item / defect-ledger skeletons the planner fills in
@@ -104,7 +105,7 @@ node ~/agent-workflow-harness/install.mjs              # installs into the curre
 
 It is **idempotent** (re-run to update) and does all of this:
 
-1. **Vendors the kit** → `<project>/agent-workflow-harness/` (scripts, lib, verifiers, hooks, …).
+1. **Vendors the kit** → `<project>/agent-workflow-harness/` (scripts, lib, verifiers, drivers, hooks, …).
 2. **Installs the Claude Code bindings** → `<project>/.claude/skills` (8), `.claude/agents` (3),
    `.claude/workflows/execute-phase.js`.
 3. **Merges the lint/format hooks** into `<project>/.claude/settings.json` (preserves your existing
@@ -121,6 +122,9 @@ Then **review `harness.config.json`** — the installer gets you 90% there, but 
 - `runtime.verifier` — `web` for a browser UI (fill `runtime.web.routes` with your routes +
   interactions), `none` for a library/service/CLI, or a path to your own adapter
   ([`verifiers/README.md`](verifiers/README.md)). **Playwright is only invoked when `verifier: "web"`.**
+- `runtime.driver` — the tool agents use for walkthroughs: `playwright-mcp` (default), `agent-browser`
+  for a headless CLI, `simctl-axe` for an iOS Simulator app, or `none` for no UI
+  ([`drivers/README.md`](drivers/README.md)).
 - `source.extensions` — **add your language's extensions** if non-JS. ⚠️ The one trap: `qa-check`
   only checks citations whose extension is listed (fail-open otherwise).
 - `hooks.{lint,format}` — your linter/formatter command + a `selftest` fixture it's guaranteed to

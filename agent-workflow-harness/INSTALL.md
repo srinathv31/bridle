@@ -30,7 +30,7 @@ node /path/to/agent-workflow-harness/install.mjs --target /path/to/your-project
 
 | Step                          | Result in `your-project/`                                                                                                 |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Vendors the kit               | `agent-workflow-harness/` (scripts, lib, verifiers, hooks, templates, roles)                                              |
+| Vendors the kit               | `agent-workflow-harness/` (scripts, lib, verifiers, drivers, hooks, templates, roles)                                     |
 | Installs Claude Code bindings | `.claude/skills/` (7), `.claude/agents/` (3), `.claude/workflows/execute-phase.js`                                        |
 | Merges editor hooks           | lint/format `PostToolUse` hooks into `.claude/settings.json` (keeps existing settings; no duplicates)                     |
 | Writes config                 | `harness.config.json` at the repo root, with **autodetected** runner verbs (pnpm/npm/yarn + Python/Go/Rust/Ruby starters) |
@@ -47,6 +47,8 @@ The installer gets ~90% there; confirm four fields:
 - **`runtime.verifier`** — `"web"` for a browser UI (then fill `runtime.web.routes` with your routes +
   the controls to drive), `"none"` for a library/API/CLI, or a path to a custom adapter
   (see `verifiers/README.md`). **Playwright runs only when `verifier: "web"`.**
+- **`runtime.driver`** — the tool agents use for walkthroughs: `"playwright-mcp"` (default), `"agent-browser"`
+  for a headless CLI, `"simctl-axe"` for an iOS Simulator app, or `"none"` for no UI (see `drivers/README.md`).
 - **`source.extensions`** — add your language's extensions if non-JS (`py`, `go`, `rb`, …), or
   `qa-check` silently skips those citations (fail-open).
 - **`hooks.{lint,format}`** — your linter/formatter command + a `selftest` fixture it's guaranteed

@@ -30,7 +30,7 @@ This skill produces a report full of claims, and a report that lies is worse tha
 
    Never reconstruct a quote from memory or paraphrase into quotation marks. A plausible-sounding quote is the easiest thing to fabricate and the hardest to catch by eye.
 
-3. **No tooling-excuse without a positive control.** "The tool is broken / it's a Playwright/Radix limitation / the MCP server is wedged" is a conclusion you may reach only **after** a positive control proves the tool works right now on a healthy subject. The runtime verifier (§3b) is that control for browser hangs. A `curl` 200 is never evidence of client-side health. Absent a positive control, a hang is an app failure, not a tooling failure.
+3. **No tooling-excuse without a positive control.** "The tool is broken / it's a driver/Radix limitation / the driver is wedged" is a conclusion you may reach only **after** a positive control proves the tool works right now on a healthy subject. The runtime verifier (§3b) is that control for browser hangs. A `curl` 200 is never evidence of client-side health. Absent a positive control, a hang is an app failure, not a tooling failure.
 
 **Self-check before you hand off.** Run the report through the mechanical checker:
 
@@ -93,9 +93,9 @@ Capture any failures verbatim — they go in the defect list. In verify mode, bu
 
 ## 3b. Runtime verifier (both modes — never skipped)
 
-A page can render a complete DOM, log zero console errors, build clean, and serve healthy — and still be **frozen**: unresponsive to interaction because the main thread is pegged. The accessibility snapshot, console, and network log do not encode responsiveness, so this failure class is invisible to every other leg of this skill. Worse, a frozen page also stalls Playwright MCP, so the symptom reads as a tooling problem. The runtime verifier is the only detector that does not share the app's failure mode.
+A page can render a complete DOM, log zero console errors, build clean, and serve healthy — and still be **frozen**: unresponsive to interaction because the main thread is pegged. The accessibility snapshot, console, and network log do not encode responsiveness, so this failure class is invisible to every other leg of this skill. Worse, a frozen page also stalls the runtime driver, so the symptom reads as a tooling problem. The runtime verifier is the only detector that does not share the app's failure mode.
 
-The verifier is selected by `harness.config.json` → `runtime.verifier`: `web` is the Playwright freeze-canary for browser UIs, `none` is a no-op for non-UI projects, or a path to a custom adapter. Run it before the Playwright-driven legs:
+The verifier is selected by `harness.config.json` → `runtime.verifier`: `web` is the Playwright freeze-canary for browser UIs, `none` is a no-op for non-UI projects, or a path to a custom adapter. Run it before the driver-driven legs:
 
 ```bash
 node agent-workflow-harness/scripts/run-gate.mjs   # runs the configured static checks PLUS the runtime verifier
@@ -111,9 +111,9 @@ With the `web` verifier, the routes it loads come from `harness.config.json` →
 
 **A `FROZEN`/`FAIL` verdict is never downgraded to "a Playwright/Radix limitation."** The verifier re-probes responsiveness _after_ each action precisely to disambiguate: an action that times out but leaves the page responsive is tooling flakiness; an action after which the page is unresponsive is a real app freeze. A FROZEN/FAIL verdict is a real app defect, never a tooling excuse — trust the verifier's verdict over any tooling rationalization.
 
-## 4. Runtime / verification checks via Playwright MCP
+## 4. Runtime / verification checks via the runtime driver
 
-Start the app (the configured dev command — `harness.config.json` → `runner.dev`). Explicitly say `use playwright mcp` before the first browser action.
+Start the app (the configured dev command — `harness.config.json` → `runner.dev`). Before the first action, read your driver's guide (`harness.config.json` → `runtime.driver`, default `playwright-mcp`; how-to in `agent-workflow-harness/drivers/<driver>.md`) and run its preflight.
 
 ### Thorough mode
 
@@ -129,9 +129,9 @@ Then smoke the **pre-existing surfaces** the phase's files touch: load each, con
 
 Do NOT walk every acceptance criterion individually, and do not probe edge-case inputs — a criterion is only exercised here if the primary flow or a new control naturally crosses it. The exhaustive per-criterion matrix is polish-qa's job.
 
-**DOM rendered ≠ page works.** If a Playwright action hangs or times out, that is a candidate liveness defect — re-run the runtime verifier (§3b) on that route to disambiguate app-freeze from tooling. Never attribute a hang to tooling without that positive control, and never proxy runtime validation through a code-shape check or a `curl` 200 (a server-side 200 cannot detect a client-side freeze).
+**DOM rendered ≠ page works.** If a driver action hangs or times out, that is a candidate liveness defect — re-run the runtime verifier (§3b) on that route to disambiguate app-freeze from tooling. Never attribute a hang to tooling without that positive control, and never proxy runtime validation through a code-shape check or a `curl` 200 (a server-side 200 cannot detect a client-side freeze).
 
-If Playwright MCP is genuinely unavailable (not merely hung on one page), stop and report it as a blocker.
+If the configured driver's preflight fails, stop and report it as a blocker. With `runtime.driver: none` there is no UI driver: exercise the surface over HTTP or the CLI and say so in coverage notes. `none` is never a blocker.
 
 ### Verify mode
 
@@ -140,7 +140,7 @@ The runtime verifier (§3b) already ran for this mode too — fold any `FROZEN`/
 For each defect in your verification list, do two probes:
 
 1. **Source-level verification** — read the file referenced in the defect's `Reproduction` section. Does the change that should have been made actually exist? Compare against the defect's `Expected` section.
-2. **Runtime verification** — drive Playwright MCP to the surface the defect manifested on. Take a screenshot. Check the specific symptom: for a CSS drift, probe `getComputedStyle`; for a behavior bug, drive the interaction; for a static-check fail, the static-check pass already covered it.
+2. **Runtime verification** — use the runtime driver to reach the surface the defect manifested on. Take a screenshot. Check the specific symptom: for a CSS drift, with a web driver, probe `getComputedStyle`; for a behavior bug, drive the interaction; for a static-check fail, the static-check pass already covered it.
 
 Record per-defect: `fixed` / `still broken` / `partially fixed`.
 
@@ -164,7 +164,7 @@ Bugs at this step are the highest-priority class of defect — they're the integ
 
 ### Thorough mode
 
-For every screen the phase touches, glance at your Playwright screenshot against the design source for **obvious breakage only**: broken layout, missing sections, unreadable/overlapping content, a component that plainly failed to render. This is a "did the screen come out structurally right" check, not a fidelity audit.
+For every screen the phase touches, glance at your driver screenshot against the design source for **obvious breakage only**: broken layout, missing sections, unreadable/overlapping content, a component that plainly failed to render. This is a "did the screen come out structurally right" check, not a fidelity audit.
 
 Do NOT hunt spacing/typography/color drift, missing interaction states, or responsive behavior — that detailed diff is polish-qa's job. Logging cosmetic drift here at blocking severity is how a functional gate turns into an hour-long polish pass.
 
@@ -295,7 +295,7 @@ Return to the orchestrator:
 - Runtime-verifier result: PASS, or the routes that came back FROZEN/FAIL
 - `qa-check` result: clean, or the citation/quote violations you found and fixed in your own report before returning it
 - `phase-guard` readiness: this report is the artifact `node agent-workflow-harness/scripts/phase-guard.mjs <id>` requires before a phase can be called complete. Run it after writing the report to confirm the phase is now guarded (all items `[x]` + this report passes `qa-check`); report green, or the gap that keeps it unguarded.
-- Coverage notes if any acceptance criteria couldn't be Playwright-validated, or any phase routes `runtime.web.routes` doesn't yet cover
+- Coverage notes if any acceptance criteria couldn't be driver-validated, or any phase routes `runtime.web.routes` doesn't yet cover
 
 If your defect list is empty, say so explicitly — the orchestrator needs that signal to decide whether to advance or run another iteration.
 
