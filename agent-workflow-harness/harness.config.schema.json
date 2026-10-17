@@ -102,6 +102,12 @@
           "description": "Built-in name (\"web\" = Playwright freeze-canary for browser UIs, \"none\" = no-op), or a path (relative to project root) to a custom adapter exporting verify(cfg). See verifiers/README.md.",
           "default": "none"
         },
+        "driver": {
+          "type": "string",
+          "enum": ["playwright-mcp", "agent-browser", "simctl-axe", "none"],
+          "description": "The interactive walkthrough tool agents use for QA flows and defect checks; separate from the verifier. \"playwright-mcp\" = Playwright MCP tools; \"agent-browser\" = the agent-browser CLI, for headless CLI sessions; \"simctl-axe\" = xcrun simctl + AXe for the iOS Simulator; \"none\" = no UI, check over HTTP or the CLI. How-to per driver: drivers/<driver>.md.",
+          "default": "playwright-mcp"
+        },
         "uiFilePattern": {
           "type": "string",
           "description": "Regex over a work-item's file paths. If any file matches, the item isUI=true and the phase gate runs the runtime verifier. For non-web stacks, point this at whatever files imply a runtime surface (handlers, endpoints) or leave it never-matching.",

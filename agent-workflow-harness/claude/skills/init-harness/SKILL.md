@@ -64,6 +64,17 @@ Start from the example and set each field deliberately. The schema is `agent-wor
 
 Never leave a web app on `"none"` to "make the gate pass" — that defeats the freeze-canary. If the right verifier doesn't exist, say so loudly rather than silently downgrading.
 
+**Pick the runtime driver** (`runtime.driver`):
+
+| Stack / where Claude runs                                            | `runtime.driver`           |
+| -------------------------------------------------------------------- | -------------------------- |
+| Web UI; Claude Code desktop app, or a CLI with the Playwright plugin | `playwright-mcp` (default) |
+| Web UI; headless CLI (SSH, Remote Control, CI)                       | `agent-browser`            |
+| iOS app in the Simulator; CLI                                        | `simctl-axe`               |
+| API or no UI                                                         | `none`                     |
+
+The driver is the interactive walkthrough tool; it is independent of `runtime.verifier`.
+
 **`runtime.uiFilePattern` — what counts as a runtime surface on this stack.** It's a regex over a work-item's file paths; a matching file flips the item to `isUI` and makes the phase gate run the verifier. Point it at this app's runtime-surface files (web pages, screens, route handlers). For a library with no runtime surface, set a pattern that never matches.
 
 **`runtime.web.routes` (web only) — enumerate the real routes and the controls worth driving.** The freeze-canary only catches a freeze on an interaction it actually drives, so for each meaningful route add an `interactions[]` entry per important control: `{label, role, name}` where `role`/`name` feed `getByRole(role, {name})`. **Auth:** if the app is gated, the routes you list will redirect to login unless the verifier authenticates first — note the auth requirement in the report and, once the web verifier supports a login step, wire it (creds via `auth.md`, never hardcoded in the config). Set `runtime.web.baseUrl` and `browserChannel` to match how the app runs.
@@ -82,8 +93,9 @@ A config you didn't run is a guess. Run the trust scripts against the freshly wr
 2. `node agent-workflow-harness/scripts/run-gate.mjs --no-runtime` — **exit 0**. Proves every configured `runner` verb resolves and passes on the current tree. Use `--no-runtime` first so a not-yet-running dev server doesn't mask a verb error. A failure here is almost always a wrong/bogus verb — fix `runner.*` and re-run.
 3. If a plan already exists: `node agent-workflow-harness/scripts/phase-items.mjs <phaseId>` — **exit 0** with sane JSON (right items, file sets parsed, overlaps computed). Proves `ids`/`planDir`/`uiFilePattern` parse this app's plan. If `items[].files` come back empty or the phase is misread, the id scheme or plan path is wrong.
 4. Verifier reachability: confirm the chosen verifier _loads_. For `web`, ensure `playwright-core` is installed and `node agent-workflow-harness/verifiers/web.mjs` runs (with the dev server up for a full PASS; with it down, a `SETUP` return is the expected "couldn't reach the app", which still proves the verifier resolves). For a custom plugin path, confirm the file exists and exports `verify(cfg)`.
+5. Driver reachability: confirm the chosen `runtime.driver` is usable. `playwright-mcp` → the `mcp__plugin_playwright_playwright__*` tools are available; `agent-browser` → `agent-browser doctor` passes its headless launch test; `simctl-axe` → `axe --version` works and `xcrun simctl list devices booted` shows the target simulator; `none` → nothing to check.
 
-Cite each command and its exit code as you go. Do not declare done until 1, 2, and (if a plan exists) 3 are green and the verifier resolves.
+Cite each command and its exit code as you go. Do not declare done until 1, 2, and (if a plan exists) 3 are green, the verifier resolves, and the driver check (5) passes.
 
 ## 5. Report and hand off
 

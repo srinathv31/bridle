@@ -112,7 +112,7 @@ Execution agents are expected to match it verbatim.
 ## Acceptance criteria
 - [ ] <code-shape check — exports X, signature/prop shape matches contracts.md>
 - [ ] <code-shape check>
-- [ ] <runtime check — the runtime verifier / Playwright sees Y on screen, state Z>   ← at least one for UI items
+- [ ] <runtime check — the runtime verifier / driver sees Y on screen, state Z>   ← at least one for UI items
 - [ ] <runtime verifier — every interactive control responds and the route stays live; `node agent-workflow-harness/scripts/run-gate.mjs` exits 0>   ← mandatory for UI items
 - [ ] lint passes
 - [ ] typecheck passes

@@ -30,7 +30,7 @@ Before handing off, run `node agent-workflow-harness/scripts/qa-check.mjs <planD
 
 ## 3. The battery
 
-Start the app once (`harness.config.json` → `runner.dev`). Say `use playwright mcp` before the first browser action. Screenshots go to `<planDir>/polish-qa-<scope>-screenshots/`.
+Start the app once (`harness.config.json` → `runner.dev`). Before the first action, read your driver's guide (`harness.config.json` → `runtime.driver`, default `playwright-mcp`; how-to in `agent-workflow-harness/drivers/<driver>.md`) and run its preflight. Screenshots go to `<planDir>/polish-qa-<scope>-screenshots/`.
 
 ### 3a. Acceptance-criterion matrix
 

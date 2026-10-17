@@ -17,7 +17,7 @@ Follow the `phase-qa` skill at `.claude/skills/phase-qa/SKILL.md`. The skill wil
 
 1. Read the most recent prior pass file. Build a verification list from defects not marked `fixed in fix-pass N` or `deferred-by-design`.
 2. Run the runtime verifier (`harness.config.json` → `runtime.verifier`; standalone web verifier = `node agent-workflow-harness/verifiers/web.mjs`) on the phase's routes — **this runs every pass, never skipped.** With the `web` verifier, DOM rendered ≠ page works; each `FROZEN`/`FAIL` verdict is a CRITICAL `liveness` defect and a real app defect, never a tooling excuse. A fix-pass can freeze a page that was live before, so this is exactly where verify mode must not "trust the prior pass." (With `verifier: "none"` this leg is a no-op; a custom adapter runs its own check.)
-3. For each defect: verify the fix at source level (read the file, check the change exists) and at runtime via Playwright MCP (drive the surface, check the symptom is gone).
+3. For each defect: verify the fix at source level (read the file, check the change exists) and at runtime via the runtime driver (`harness.config.json` → `runtime.driver`, default `playwright-mcp`; how-to in `agent-workflow-harness/drivers/<driver>.md`) — drive the surface, check the symptom is gone.
 4. Run the configured typecheck and build command (`harness.config.json` → `runner.typecheck` and `runner.build`) at the integration level (skip lint).
 5. Take a smoke screenshot of each major touched surface — watch for regressions, not exhaustive drift.
 6. Flag any new defects you spot during the smoke pass. New defects in verify mode are higher-priority than minor drift — they indicate the fix-pass had side effects. New CRITICAL/MAJOR finds go in your pass file; new MINORS are appended to `<planDir>/defect-ledger.md` per its header protocol instead — and anything already listed there is known, so do not re-prove or re-report it.
@@ -29,7 +29,7 @@ Follow the `phase-qa` skill at `.claude/skills/phase-qa/SKILL.md`. The skill wil
 ## Disciplines
 
 - **Read-only** with respect to production code. The only files you write are the defect list at `<planDir>/phase-<id>-qa-pass<N>.md`, screenshots under `<planDir>/phase-<id>-qa-pass<N>-screenshots/`, the RESOLVED annotations in the base `<planDir>/phase-<id>-qa.md`, and appended minor rows in `<planDir>/defect-ledger.md`. Do not touch anything under your project's production-code directories (your configured source dirs).
-- **Use Playwright MCP.** Say `use playwright mcp` before the first browser action.
+- **Use the runtime driver.** Before the first action, read your driver's guide and run its preflight.
 - **Evidence-or-reject.** Each verdict cites the source `file:line` you verified and the screenshot path you captured; a bare `FIXED` is not acceptable. Quote sources verbatim and cite them — never reconstruct a quote from memory. `node agent-workflow-harness/scripts/qa-check.mjs` enforces this mechanically before you hand off.
 - **Trust the prior pass.** Don't re-derive the full contract surface, the architectural rule list, or the full set of acceptance criteria. The prior pass file is your map.
 - **Severity discipline.** Tier defect detail by severity per the skill. Minor defects get one paragraph. The merge barrier blocks on `harness.config.json` → `gate.blockOn` (default `["critical","major"]`) — a MAJOR defect blocks advancement, not only critical, so classify accordingly. Reserve critical for actual blockers; if everything is critical, nothing is.

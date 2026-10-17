@@ -37,7 +37,7 @@ const ok = (m) => console.log(`  ✓ ${m}`);
 const info = (m) => console.log(`  • ${m}`);
 
 // ── 1. vendor the kit ────────────────────────────────────────────────────────
-const VENDOR_PARTS = ["lib", "scripts", "verifiers", "hooks", "templates", "roles", "harness.config.schema.json", "harness.config.example.json", "package.json", "README.md", ".gitignore"];
+const VENDOR_PARTS = ["lib", "scripts", "verifiers", "drivers", "hooks", "templates", "roles", "harness.config.schema.json", "harness.config.example.json", "package.json", "README.md", ".gitignore"];
 
 function vendor(target) {
   const dest = join(target, VENDOR_NAME);
@@ -190,6 +190,7 @@ function main() {
 
   log(`\nDone. Next steps:`);
   log(`  1. Review harness.config.json — confirm runner.* verbs + runtime.verifier ("web" needs runtime.web.routes; else "none").`);
+  log(`     Set runtime.driver for walkthroughs: "playwright-mcp" (default), "agent-browser" (headless CLI), "simctl-axe" (iOS Simulator) or "none".`);
   log(`  2. If using the web verifier: npm i -D playwright-core (and ensure Chrome is installed).`);
   log(`  3. Prove the hooks bite:  node ${VENDOR_NAME}/scripts/hook-selftest.mjs`);
   log(`  4. Plan a feature with the planner skill, then drive it:  /drive-build auto`);
